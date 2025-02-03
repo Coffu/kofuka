@@ -1,4 +1,3 @@
-import os
 import logging
 import asyncio
 from aiogram import Bot, Dispatcher, types
@@ -9,17 +8,17 @@ from datetime import datetime
 # Логування
 logging.basicConfig(level=logging.INFO)
 
-# Отримання конфігурації зі змінних середовища
-BOT_TOKEN = os.getenv("7703843605:AAHmrXmeDGC9NybirXn9IlhMbqSDAtXx1OY")
-DATABASE_URL = os.getenv("postgresql://telegram_shop_48bs_user:Lo8UMSqzNOUqRbGLbD0JAofPEdupoBug@dpg-cug3k0dsvqrc7383jdrg-a.ohio-postgres.render.com/telegram_shop_48bs")
+# Конфігурація (токен і URL бази даних прописані прямо в коді)
+BOT_TOKEN = "7703843605:AAHmrXmeDGC9NybirXn9IlhMbqSDAtXx1OY"
+DATABASE_URL = "postgresql://telegram_shop_48bs_user:Lo8UMSqzNOUqRbGLbD0JAofPEdupoBug@dpg-cug3k0dsvqrc7383jdrg-a.ohio-postgres.render.com/telegram_shop_48bs"
 
-# Перевірка змінних середовища
+# Перевірка конфігурації
 if not BOT_TOKEN:
-    logging.error("Змінна середовища BOT_TOKEN не налаштована!")
+    logging.error("Токен бота не налаштований!")
     exit()
 
 if not DATABASE_URL:
-    logging.error("Змінна середовища DATABASE_URL не налаштована!")
+    logging.error("URL бази даних не налаштований!")
     exit()
 
 # Підключення до бази даних
