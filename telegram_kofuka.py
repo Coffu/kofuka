@@ -1,6 +1,10 @@
 import logging
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+from aiogram.dispatcher.router import Router
+from aiogram.dispatcher.filters import Command
+from aiogram.types import Message
+from aiogram.utils.keyboard import ReplyKeyboardBuilder
 import psycopg2
 from datetime import datetime
 
@@ -29,18 +33,22 @@ except Exception as e:
     logging.error(f"Error connecting to the database: {e}")
     exit()
 
-# Ініціалізація бота
+# Ініціалізація бота та диспетчера
 bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher(bot)
+dp = Dispatcher()
+
+# Створення маршрутизатора
+router = Router()
+dp.include_router(router)
 
 # Кнопки меню
-main_menu = ReplyKeyboardMarkup(resize_keyboard=True)
-main_menu.add(KeyboardButton("👗 Przeglądaj ubrania"))
-main_menu.add(KeyboardButton("📦 Moje zamówienia"))
+builder = ReplyKeyboardBuilder()
+builder.row(KeyboardButton(text="👗 Przeglądaj ubrania"))
+builder.row(KeyboardButton(text="📦 Moje zamówienia"))
 
 # Обробник команди /start
-@dp.message_handler(commands=['start'])
-async def start_command(message: types.Message):
+@router.message(Command("start"))
+async def start_command(message: Message):
     user_id = message.from_user.id
     username = message.from_user.username or "Anonim"
     full_name = message.from_user.full_name
@@ -60,11 +68,11 @@ async def start_command(message: types.Message):
         await message.reply("Wystąpił błąd podczas rejestracji użytkownika.")
         return
 
-    await message.reply("Witaj w sklepie Kofuka! Wybierz opcję z menu:", reply_markup=main_menu)
+    await message.reply("Witaj w sklepie Kofuka! Wybierz opcję z menu:", reply_markup=builder.as_markup(resize_keyboard=True))
 
 # Обробник кнопки "👗 Przeglądaj ubrania"
-@dp.message_handler(lambda message: message.text == "👗 Przeglądaj ubrania")
-async def show_products(message: types.Message):
+@router.message(lambda message: message.text == "👗 Przeglądaj ubrania")
+async def show_products(message: Message):
     try:
         cursor.execute("SELECT id, name, price FROM products")
         products = cursor.fetchall()
@@ -81,8 +89,8 @@ async def show_products(message: types.Message):
         await message.reply("Wystąpił błąd podczas pobierania listy ubrań.")
 
 # Обробник кнопки "📦 Moje zamówienia"
-@dp.message_handler(lambda message: message.text == "📦 Moje zamówienia")
-async def show_orders(message: types.Message):
+@router.message(lambda message: message.text == "📦 Moje zamówienia")
+async def show_orders(message: Message):
     user_id = message.from_user.id
     try:
         cursor.execute(
@@ -108,5 +116,5 @@ async def show_orders(message: types.Message):
         await message.reply("Wystąpił błąd podczas pobierania zamówień.")
 
 if __name__ == "__main__":
-    from aiogram import executor
-    executor.start_polling(dp, skip_updates=True)
+    from aiogram import Executor
+    Executor.run_polling(dp, skip_updates=True)
