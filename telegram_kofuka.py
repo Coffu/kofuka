@@ -1,12 +1,10 @@
-import logging
 from aiogram import Bot, Dispatcher, types
+from aiogram.filters import Command  # Оновлений імпорт для команд
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
-from aiogram.dispatcher.router import Router
-from aiogram.dispatcher.filters import Command
-from aiogram.types import Message
 from aiogram.utils.keyboard import ReplyKeyboardBuilder
 import psycopg2
 from datetime import datetime
+import logging
 
 # Логування
 logging.basicConfig(level=logging.INFO)
@@ -33,13 +31,9 @@ except Exception as e:
     logging.error(f"Error connecting to the database: {e}")
     exit()
 
-# Ініціалізація бота та диспетчера
+# Ініціалізація бота
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
-
-# Створення маршрутизатора
-router = Router()
-dp.include_router(router)
 
 # Кнопки меню
 builder = ReplyKeyboardBuilder()
@@ -47,8 +41,8 @@ builder.row(KeyboardButton(text="👗 Przeglądaj ubrania"))
 builder.row(KeyboardButton(text="📦 Moje zamówienia"))
 
 # Обробник команди /start
-@router.message(Command("start"))
-async def start_command(message: Message):
+@dp.message(Command("start"))
+async def start_command(message: types.Message):
     user_id = message.from_user.id
     username = message.from_user.username or "Anonim"
     full_name = message.from_user.full_name
@@ -71,8 +65,8 @@ async def start_command(message: Message):
     await message.reply("Witaj w sklepie Kofuka! Wybierz opcję z menu:", reply_markup=builder.as_markup(resize_keyboard=True))
 
 # Обробник кнопки "👗 Przeglądaj ubrania"
-@router.message(lambda message: message.text == "👗 Przeglądaj ubrania")
-async def show_products(message: Message):
+@dp.message(lambda message: message.text == "👗 Przeglądaj ubrania")
+async def show_products(message: types.Message):
     try:
         cursor.execute("SELECT id, name, price FROM products")
         products = cursor.fetchall()
@@ -86,11 +80,11 @@ async def show_products(message: Message):
             await message.reply(response)
     except Exception as e:
         logging.error(f"Error fetching products: {e}")
-        await message.reply("Wystąpił błąd podczas pobierania listy ubrań.")
+        await message.reply("Wystąpił błąd podczas pobierania listи ubраń.")
 
 # Обробник кнопки "📦 Moje zamówienia"
-@router.message(lambda message: message.text == "📦 Moje zamówienia")
-async def show_orders(message: Message):
+@dp.message(lambda message: message.text == "📦 Moje zamówienia")
+async def show_orders(message: types.Message):
     user_id = message.from_user.id
     try:
         cursor.execute(
