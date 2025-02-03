@@ -1,6 +1,6 @@
 import logging
 import asyncio
-from aiogram import Bot, Dispatcher, types
+from aiogram import Bot, Dispatcher, Router, types
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 import psycopg2
 from datetime import datetime
@@ -30,11 +30,11 @@ except Exception as e:
     logging.error(f"Помилка підключення до бази даних: {e}")
     exit()
 
-# Ініціалізація бота
+# Ініціалізація бота та диспетчера
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
+router = Router()
 
-# Кнопки меню
 # Кнопки меню
 main_menu = ReplyKeyboardMarkup(
     keyboard=[
@@ -44,9 +44,8 @@ main_menu = ReplyKeyboardMarkup(
     resize_keyboard=True
 )
 
-
 # Обробник команди /start
-@dp.message_handler(commands=['start'])
+@router.message(commands=['start'])
 async def start_command(message: types.Message):
     user_id = message.from_user.id
     username = message.from_user.username or "Anonim"
@@ -71,7 +70,7 @@ async def start_command(message: types.Message):
     await message.reply("Witaj w sklepie Kofuka! Wybierz opcję z menu:", reply_markup=main_menu)
 
 # Обробник кнопки "👗 Przeglądaj ubrania"
-@dp.message_handler(lambda message: message.text == "👗 Przeglądaj ubrania")
+@router.message(lambda message: message.text == "👗 Przeglądaj ubrania")
 async def show_products(message: types.Message):
     try:
         cursor.execute("SELECT id, name, price FROM products")
@@ -89,7 +88,7 @@ async def show_products(message: types.Message):
         await message.reply("Виникла помилка під час отримання списку продуктів.")
 
 # Обробник кнопки "📦 Moje zamówienia"
-@dp.message_handler(lambda message: message.text == "📦 Moje zamówienia")
+@router.message(lambda message: message.text == "📦 Moje zamówienia")
 async def show_orders(message: types.Message):
     user_id = message.from_user.id
     try:
@@ -117,7 +116,7 @@ async def show_orders(message: types.Message):
 
 # Запуск бота
 async def main():
-    dp.startup.register(lambda: logging.info("Бот успішно запущений!"))
+    dp.include_router(router)
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
