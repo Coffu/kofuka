@@ -1,2 +1,2 @@
-aiogram==3.x
-psycopg2-binary==2.x
+aiogram==3.0.0b7
+psycopg2-binary
