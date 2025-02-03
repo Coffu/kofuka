@@ -35,9 +35,14 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
 # Кнопки меню
-main_menu = ReplyKeyboardMarkup(resize_keyboard=True)
-main_menu.add(KeyboardButton("👗 Przeglądaj ubrania"))
-main_menu.add(KeyboardButton("📦 Moje zamówienia"))
+main_menu = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton("👗 Przeglądaj ubrania")],
+        [KeyboardButton("📦 Moje zamówienia")]
+    ],
+    resize_keyboard=True
+)
+
 
 # Обробник команди /start
 @dp.message_handler(commands=['start'])
