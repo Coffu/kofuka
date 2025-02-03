@@ -10,8 +10,7 @@ from datetime import datetime
 logging.basicConfig(level=logging.INFO)
 
 # Отримання конфігурації зі змінних середовища
-BOT_TOKEN = os.getenv("7703843605:AAHmrXmeDGC9NybirXn9IlhMbqSDAtXx1OY
-")
+BOT_TOKEN = os.getenv("7703843605:AAHmrXmeDGC9NybirXn9IlhMbqSDAtXx1OY")
 DATABASE_URL = os.getenv("postgresql://telegram_shop_48bs_user:Lo8UMSqzNOUqRbGLbD0JAofPEdupoBug@dpg-cug3k0dsvqrc7383jdrg-a.ohio-postgres.render.com/telegram_shop_48bs")
 
 # Перевірка змінних середовища
