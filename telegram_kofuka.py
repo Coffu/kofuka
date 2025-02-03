@@ -35,10 +35,11 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
 # Кнопки меню
+# Кнопки меню
 main_menu = ReplyKeyboardMarkup(
     keyboard=[
-        [KeyboardButton("👗 Przeglądaj ubrania")],
-        [KeyboardButton("📦 Moje zamówienia")]
+        [KeyboardButton(text="👗 Przeglądaj ubrania")],
+        [KeyboardButton(text="📦 Moje zamówienia")]
     ],
     resize_keyboard=True
 )
