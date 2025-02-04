@@ -20,9 +20,6 @@ db_pool = None  # Глобальне підключення до БД
 
 logging.basicConfig(level=logging.INFO)
 
-ADMIN_PASSWORD = "123456"
-admin_sessions = {}
-
 async def connect_db():
     global db_pool
     if db_pool is None:
@@ -48,67 +45,78 @@ async def webhook_handler(update: dict):
     await dp.feed_update(bot, telegram_update)
     return {"status": "ok"}
 
-@dp.message(Command("admin"))
-async def admin_login(message: types.Message):
-    admin_sessions[message.from_user.id] = "waiting_password"
-    await message.answer("Введіть пароль для входу в адмінку:")
-
-@dp.message()
-async def check_admin_password(message: types.Message):
-    if message.from_user.id in admin_sessions and admin_sessions[message.from_user.id] == "waiting_password":
-        if message.text == ADMIN_PASSWORD:
-            del admin_sessions[message.from_user.id]
-            keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-            buttons = [
-                KeyboardButton("Додати групу"), KeyboardButton("Видалити групу"),
-                KeyboardButton("Додати викладача"), KeyboardButton("Видалити викладача"),
-                KeyboardButton("Додати розклад"), KeyboardButton("Видалити розклад"),
-                KeyboardButton("Додати новину")
-            ]
-            keyboard.add(*buttons)
-            await message.answer("Ви увійшли в адмін-панель!", reply_markup=keyboard)
-        else:
-            await message.answer("Невірний пароль!")
-
 @dp.message(Command("start"))
 async def start(message: types.Message):
     db = await connect_db()
     user = await db.fetchrow("SELECT * FROM students WHERE user_id=$1", message.from_user.id)
     if user:
         keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-        buttons = [KeyboardButton("Мій розклад"), KeyboardButton("Контакти викладачів"), KeyboardButton("Новини")]
+        buttons = [KeyboardButton("Мій розклад"), KeyboardButton("Контакти викладачів")]
         keyboard.add(*buttons)
         await message.answer("Вітаю! Ось ваші доступні опції:", reply_markup=keyboard)
     else:
-        admin_sessions[message.from_user.id] = "register_name"
-        await message.answer("Введіть своє ім'я для реєстрації:")
+        await message.answer("Введіть своє ім'я та прізвище для реєстрації:")
 
 @dp.message()
 async def handle_message(message: types.Message):
     user_id = message.from_user.id
     db = await connect_db()
     
-    if user_id in admin_sessions and admin_sessions[user_id] == "register_name":
-        admin_sessions[user_id] = message.text
-        groups = await db.fetch("SELECT name FROM groups")
+    if len(message.text.split()) < 2:
+        await message.answer("Будь ласка, введіть ім'я та прізвище.")
+        return
+    
+    students = await db.fetch("SELECT user_id FROM students WHERE user_id=$1", user_id)
+    if students:
+        await message.answer("Ви вже зареєстровані!")
+        return
+    
+    groups = await db.fetch("SELECT name FROM groups")
+    keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+    for group in groups:
+        keyboard.add(KeyboardButton(group["name"]))
+    
+    await db.execute("INSERT INTO students (user_id, name) VALUES ($1, $2)", user_id, message.text)
+    await message.answer("Оберіть свою групу:", reply_markup=keyboard)
+
+@dp.message()
+async def choose_group(message: types.Message):
+    user_id = message.from_user.id
+    db = await connect_db()
+    group = await db.fetchrow("SELECT id FROM groups WHERE name=$1", message.text)
+    
+    if group:
+        await db.execute("UPDATE students SET group_id=$1 WHERE user_id=$2", group["id"], user_id)
         keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-        for group in groups:
-            keyboard.add(KeyboardButton(group["name"]))
-        await message.answer("Оберіть свою групу:", reply_markup=keyboard)
-    elif user_id in admin_sessions:
-        group = await db.fetchrow("SELECT id FROM groups WHERE name=$1", message.text)
-        if group:
-            await db.execute("INSERT INTO students (user_id, name, group_id) VALUES ($1, $2, $3)", user_id, admin_sessions[user_id], group["id"])
-            del admin_sessions[user_id]
-            keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-            buttons = [KeyboardButton("Мій розклад"), KeyboardButton("Контакти викладачів"), KeyboardButton("Новини")]
-            keyboard.add(*buttons)
-            await message.answer("Реєстрація завершена! Ось ваші опції:", reply_markup=keyboard)
-        else:
-            await message.answer("Такої групи не існує. Спробуйте ще раз.")
+        buttons = [KeyboardButton("Мій розклад"), KeyboardButton("Контакти викладачів")]
+        keyboard.add(*buttons)
+        await message.answer("Реєстрація завершена! Ось ваші опції:", reply_markup=keyboard)
     else:
-        await message.answer("Привіт! Бот працює через вебхук!")
+        await message.answer("Такої групи не існує. Спробуйте ще раз.")
+
+@dp.message(Command("Контакти викладачів"))
+async def show_teachers(message: types.Message):
+    db = await connect_db()
+    teachers = await db.fetch("SELECT name, subject, email FROM teachers")
+    response = "Контакти викладачів:\n"
+    for teacher in teachers:
+        response += f"{teacher['name']} ({teacher['subject']}): {teacher['email']}\n"
+    await message.answer(response)
+
+@dp.message(Command("Мій розклад"))
+async def show_schedule(message: types.Message):
+    db = await connect_db()
+    user = await db.fetchrow("SELECT group_id FROM students WHERE user_id=$1", message.from_user.id)
+    if not user:
+        await message.answer("Ви ще не зареєстровані!")
+        return
+    schedule = await db.fetch("SELECT subject, day, time, classroom FROM schedule WHERE group_id=$1", user["group_id"])
+    response = "Ваш розклад:\n"
+    for lesson in schedule:
+        response += f"{lesson['day']} {lesson['time']} - {lesson['subject']} (Ауд. {lesson['classroom']})\n"
+    await message.answer(response)
 
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
+
