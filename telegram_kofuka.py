@@ -6,7 +6,7 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from aiogram.fsm.storage.memory import MemoryStorage
 import asyncpg
 import asyncio
-from flask import Flask, request
+from flask import Flask
 from threading import Thread
 
 # Налаштування логування
@@ -26,7 +26,7 @@ dp = Dispatcher(storage=MemoryStorage())
 
 db_pool = None  # Глобальне підключення до БД
 
-# Підключення до бази даних з обробкою помилок
+# Підключення до бази даних
 async def connect_db():
     global db_pool
     try:
@@ -145,18 +145,21 @@ def index():
     logger.info("Бот працює!")
     return "Бот працює!"
 
+# Функція для запуску Flask у окремому потоці
 def run_flask():
     app.run(host="0.0.0.0", port=PORT)
 
-def run_bot():
-    from aiogram import executor
-    logger.info("Запуск бота...")
-    executor.start_polling(dp, skip_updates=True)
+# Асинхронний запуск бота
+async def main():
+    loop = asyncio.get_event_loop()
 
-if __name__ == "__main__":
-    # Запуск Flask у окремому потоці
+    # Запуск Flask в окремому потоці
     flask_thread = Thread(target=run_flask)
     flask_thread.start()
 
-    # Запуск бота в основному потоці
-    run_bot()
+    # Запуск бота
+    logger.info("Запуск бота...")
+    await dp.start_polling()
+
+if __name__ == "__main__":
+    asyncio.run(main())
