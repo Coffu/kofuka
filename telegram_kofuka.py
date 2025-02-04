@@ -1,123 +1,119 @@
 import logging
-import asyncio
-from aiogram import Bot, Dispatcher, Router, types
+from aiogram import Bot, Dispatcher, executor, types
+from aiogram.contrib.middlewares.logging import LoggingMiddleware
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
-import psycopg2
-from datetime import datetime
+import asyncpg
+
+# Укажіть ваш токен Telegram
+API_TOKEN = "7703843605:AAHmrXmeDGC9NybirXn9IlhMbqSDAtXx1OY"
 
 # Логування
 logging.basicConfig(level=logging.INFO)
 
-# Конфігурація (токен і URL бази даних прописані прямо в коді)
-BOT_TOKEN = "7703843605:AAHmrXmeDGC9NybirXn9IlhMbqSDAtXx1OY"
-DATABASE_URL = "postgresql://telegram_shop_48bs_user:Lo8UMSqzNOUqRbGLbD0JAofPEdupoBug@dpg-cug3k0dsvqrc7383jdrg-a.ohio-postgres.render.com/telegram_shop_48bs"
-
-# Перевірка конфігурації
-if not BOT_TOKEN:
-    logging.error("Токен бота не налаштований!")
-    exit()
-
-if not DATABASE_URL:
-    logging.error("URL бази даних не налаштований!")
-    exit()
+# Ініціалізація бота і диспетчера
+bot = Bot(token=API_TOKEN)
+dp = Dispatcher(bot)
+dp.middleware.setup(LoggingMiddleware())
 
 # Підключення до бази даних
-try:
-    conn = psycopg2.connect(DATABASE_URL)
-    cursor = conn.cursor()
-    logging.info("Підключення до бази даних встановлено.")
-except Exception as e:
-    logging.error(f"Помилка підключення до бази даних: {e}")
-    exit()
+DB_CONFIG = {
+    'user': 'pr_tg_user',
+    'password': 'qKgOhgMjLsfAB1UtWtqHFSNcI7TM1PDT',
+    'database': 'pr_tg',
+    'host': 'dpg-cugmd1bv2p9s73cktkog-a',
+    'port': 5432
+}
 
-# Ініціалізація бота та диспетчера
-bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher()
-router = Router()
+async def create_db_pool():
+    return await asyncpg.create_pool(**DB_CONFIG)
+
+db_pool = None
 
 # Кнопки меню
-main_menu = ReplyKeyboardMarkup(
-    keyboard=[
-        [KeyboardButton(text="👗 Przeglądaj ubrania")],
-        [KeyboardButton(text="📦 Moje zamówienia")]
-    ],
-    resize_keyboard=True
-)
+menu_buttons = ReplyKeyboardMarkup(resize_keyboard=True)
+menu_buttons.add(KeyboardButton("Розклад"))
+menu_buttons.add(KeyboardButton("Новини"))
 
-# Обробник команди /start
-@router.message(commands=['start'])
+# Стартова команда
+@dp.message_handler(commands=['start'])
 async def start_command(message: types.Message):
+    await message.answer("Вітаємо у боті помічнику коледжу!", reply_markup=menu_buttons)
+
+# Розклад
+@dp.message_handler(lambda message: message.text == "Розклад")
+async def get_schedule(message: types.Message):
     user_id = message.from_user.id
-    username = message.from_user.username or "Anonim"
-    full_name = message.from_user.full_name
-
-    try:
-        cursor.execute("SELECT id FROM users WHERE id = %s", (user_id,))
-        user = cursor.fetchone()
-
+    async with db_pool.acquire() as conn:
+        user = await conn.fetchrow("SELECT role, group_name FROM users WHERE telegram_id = $1", user_id)
         if not user:
-            cursor.execute(
-                "INSERT INTO users (id, username, full_name, created_at) VALUES (%s, %s, %s, %s)",
-                (user_id, username, full_name, datetime.now())
-            )
-            conn.commit()
-            logging.info(f"Новий користувач зареєстрований: {username} ({user_id})")
-    except Exception as e:
-        logging.error(f"Помилка при реєстрації користувача: {e}")
-        await message.reply("Виникла помилка під час реєстрації.")
-        return
+            await message.answer("Вас не знайдено в базі. Зверніться до адміністратора.")
+            return
 
-    await message.reply("Witaj w sklepie Kofuka! Wybierz opcję z menu:", reply_markup=main_menu)
-
-# Обробник кнопки "👗 Przeglądaj ubrania"
-@router.message(lambda message: message.text == "👗 Przeglądaj ubrania")
-async def show_products(message: types.Message):
-    try:
-        cursor.execute("SELECT id, name, price FROM products")
-        products = cursor.fetchall()
-
-        if not products:
-            await message.reply("Brak dostępnych ubrań.")
+        role = user['role']
+        if role == 'student':
+            group_name = user['group_name']
+            schedule = await conn.fetch("SELECT date, time, subject, teacher, classroom FROM schedule WHERE group_name = $1 ORDER BY date, time", group_name)
+        elif role == 'teacher':
+            schedule = await conn.fetch("SELECT date, time, subject, group_name, classroom FROM schedule WHERE teacher = (SELECT full_name FROM teachers WHERE telegram_id = $1) ORDER BY date, time", user_id)
         else:
-            response = "🛍️ Dostępne ubrania:\n"
-            for product in products:
-                response += f"{product[0]}. {product[1]} - {product[2]:.2f} PLN\n"
-            await message.reply(response)
-    except Exception as e:
-        logging.error(f"Помилка отримання списку продуктів: {e}")
-        await message.reply("Виникла помилка під час отримання списку продуктів.")
+            await message.answer("Ця функція доступна лише для студентів і викладачів.")
+            return
 
-# Обробник кнопки "📦 Moje zamówienia"
-@router.message(lambda message: message.text == "📦 Moje zamówienia")
-async def show_orders(message: types.Message):
+        if not schedule:
+            await message.answer("Розклад не знайдено.")
+            return
+
+        response = "Ваш розклад:\n\n"
+        for entry in schedule:
+            response += f"Дата: {entry['date']}, Час: {entry['time']}, Предмет: {entry['subject']}, Викладач: {entry.get('teacher', '-')}, Аудиторія: {entry['classroom']}\n"
+        await message.answer(response)
+
+# Новини
+@dp.message_handler(lambda message: message.text == "Новини")
+async def get_announcements(message: types.Message):
+    async with db_pool.acquire() as conn:
+        announcements = await conn.fetch("SELECT title, message, created_at FROM announcements ORDER BY created_at DESC LIMIT 5")
+        if not announcements:
+            await message.answer("Новин немає.")
+            return
+
+        response = "Останні новини:\n\n"
+        for announcement in announcements:
+            response += f"{announcement['title']} ({announcement['created_at']}):\n{announcement['message']}\n\n"
+        await message.answer(response)
+
+# Додавання новин (для адміністраторів)
+@dp.message_handler(commands=['add_news'])
+async def add_announcement(message: types.Message):
     user_id = message.from_user.id
-    try:
-        cursor.execute(
-            "SELECT orders.id, products.name, orders.total_price, orders.created_at FROM orders "
-            "JOIN products ON orders.product_id = products.id WHERE orders.user_id = %s",
-            (user_id,)
-        )
-        orders = cursor.fetchall()
+    async with db_pool.acquire() as conn:
+        user = await conn.fetchrow("SELECT role FROM users WHERE telegram_id = $1", user_id)
+        if not user or user['role'] != 'admin':
+            await message.answer("Ця команда доступна лише для адміністраторів.")
+            return
 
-        if not orders:
-            await message.reply("Nie masz jeszcze żadnych zamówień.")
-        else:
-            response = "📦 Twoje zamówienia:\n"
-            for order in orders:
-                response += (
-                    f"Zamówienie #{order[0]}: {order[1]}\n"
-                    f"Cena: {order[2]:.2f} PLN\n"
-                    f"Data: {order[3].strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-                )
-            await message.reply(response)
-    except Exception as e:
-        logging.error(f"Помилка отримання замовлень: {e}")
-        await message.reply("Виникла помилка під час отримання замовлень.")
+    await message.answer("Введіть новину у форматі: Заголовок | Текст новини")
 
-# Запуск бота
-async def main():
-    dp.include_router(router)
-    await dp.start_polling(bot)
+    @dp.message_handler()
+    async def save_announcement(news_message: types.Message):
+        try:
+            title, message_text = map(str.strip, news_message.text.split('|', 1))
+        except ValueError:
+            await news_message.answer("Невірний формат. Використовуйте: Заголовок | Текст новини")
+            return
 
-if __name__ == "__main__":
-    asyncio.run(main())
+        async with db_pool.acquire() as conn:
+            await conn.execute("INSERT INTO announcements (title, message) VALUES ($1, $2)", title, message_text)
+        await news_message.answer("Новину додано!")
+
+if __name__ == '__main__':
+    async def on_startup(dp):
+        global db_pool
+        db_pool = await create_db_pool()
+        logging.info("Бот запущено і база даних підключена.")
+
+    async def on_shutdown(dp):
+        await db_pool.close()
+        logging.info("База даних відключена.")
+
+    executor.start_polling(dp, on_startup=on_startup, on_shutdown=on_shutdown)
