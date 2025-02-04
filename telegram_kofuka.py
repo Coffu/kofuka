@@ -45,7 +45,8 @@ async def delete_webhook():
 main_keyboard = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="Мій розклад 📅")],
-        [KeyboardButton(text="Учні у групі 👥")]
+        [KeyboardButton(text="Учні у групі 👥")],
+        [KeyboardButton(text="Контакти викладачів 👨‍🏫")]
     ],
     resize_keyboard=True
 )
@@ -173,7 +174,7 @@ async def handle_group_selection(message: types.Message):
 
 @dp.message(lambda message: message.text == "Мій розклад 📅")
 async def my_schedule(message: types.Message):
-    """ Виведення розкладу """
+    """ Виведення розкладу для групи користувача """
     user_id = message.from_user.id
     db = await connect_db()
     student = await db.fetchrow("SELECT group_id FROM students WHERE user_id=$1", user_id)
@@ -182,12 +183,56 @@ async def my_schedule(message: types.Message):
         await message.answer("Вам потрібно вибрати групу перед переглядом розкладу.")
         return
 
-    schedule = await db.fetch("SELECT day, subject, time FROM schedule WHERE group_id=$1", student["group_id"])
+    schedule = await db.fetch("SELECT day, subject, time, classroom FROM schedule WHERE group_id=$1", student["group_id"])
     if schedule:
-        schedule_text = "\n".join([f"{row['day']} - {row['subject']} о {row['time']}" for row in schedule])
+        schedule_text = "\n".join([f"{row['day']} - {row['subject']} о {row['time']} в {row['classroom']}" for row in schedule])
         await message.answer(f"Ваш розклад:\n{schedule_text}")
     else:
         await message.answer("Розклад відсутній.")
+
+@dp.message(lambda message: message.text == "Контакти викладачів 👨‍🏫")
+async def teacher_contacts(message: types.Message):
+    """ Виведення контактів викладачів для групи користувача """
+    user_id = message.from_user.id
+    db = await connect_db()
+    
+    # Отримуємо group_id для користувача
+    student = await db.fetchrow("SELECT group_id FROM students WHERE user_id=$1", user_id)
+
+    if not student or not student["group_id"]:
+        await message.answer("Вам потрібно вибрати групу перед переглядом контактів викладачів.")
+        return
+
+    # Отримуємо викладачів для цієї групи з таблиці teachers
+    teachers = await db.fetch("SELECT name, subject, email FROM teachers WHERE group_id=$1", student["group_id"])
+    
+    if teachers:
+        contacts_text = "\n".join([f"{teacher['name']} - {teacher['subject']} - {teacher['email']}" for teacher in teachers])
+        await message.answer(f"Контакти викладачів для вашої групи:\n{contacts_text}")
+    else:
+        await message.answer("Контакти викладачів для вашої групи відсутні.")
+
+@dp.message(lambda message: message.text == "Учні у групі 👥")
+async def group_students(message: types.Message):
+    """ Виведення учнів, які належать до тієї ж групи, що й користувач """
+    user_id = message.from_user.id
+    db = await connect_db()
+
+    # Отримуємо group_id для користувача
+    student = await db.fetchrow("SELECT group_id FROM students WHERE user_id=$1", user_id)
+
+    if not student or not student["group_id"]:
+        await message.answer("Вам потрібно вибрати групу перед переглядом учнів.")
+        return
+
+    # Отримуємо список учнів, які належать до цієї ж групи
+    students_in_group = await db.fetch("SELECT name FROM students WHERE group_id=$1", student["group_id"])
+    
+    if students_in_group:
+        students_list = "\n".join([student["name"] for student in students_in_group])
+        await message.answer(f"Учні у вашій групі:\n{students_list}")
+    else:
+        await message.answer("Учні у вашій групі відсутні.")
 
 @app.route("/")
 def keep_alive():
