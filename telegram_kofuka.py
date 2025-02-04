@@ -23,12 +23,6 @@ bot = Bot(token=TOKEN)
 storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
 
-# Реєстрація хендлерів (переміщено сюди, бо раніше dp не був створений)
-dp.message.register(my_schedule, lambda message: message.text == "Мій розклад 📅")
-dp.message.register(teacher_contacts, lambda message: message.text == "Контакти викладачів 👨‍🏫")
-dp.message.register(students_in_group, lambda message: message.text == "Учні у групі 👥")
-
-
 app = Flask(__name__)
 
 logger.info(f"DATABASE_URL: {DATABASE_URL}")
@@ -172,6 +166,11 @@ async def students_in_group(message: types.Message):
         await message.answer(f"Учні у вашій групі:\n{students_text}")
     else:
         await message.answer("Немає студентів у вашій групі.")
+
+# Реєстрація хендлерів (переміщено сюди, бо раніше dp не був створений)
+dp.message.register(my_schedule, lambda message: message.text == "Мій розклад 📅")
+dp.message.register(teacher_contacts, lambda message: message.text == "Контакти викладачів 👨‍🏫")
+dp.message.register(students_in_group, lambda message: message.text == "Учні у групі 👥")
         
 @dp.message() #тест кнопок
 async def debug_message(message: types.Message):
