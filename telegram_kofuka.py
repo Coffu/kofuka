@@ -8,7 +8,6 @@ from sqlalchemy.orm import sessionmaker, declarative_base, relationship
 from telegram import Update, ReplyKeyboardMarkup, Bot
 from telegram.ext import CommandHandler, CallbackContext, MessageHandler, Filters, Dispatcher
 
-bot.set_webhook(url=f"https://kofuka-bk1t.onrender.com{TOKEN}")
 # Налаштування логування
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -52,7 +51,11 @@ class Teacher(Base):
 Base.metadata.create_all(engine)
 
 app = Flask(__name__)
-bot = Bot(token=TOKEN)
+bot = Bot(token=TOKEN)  # Ініціалізація бота
+
+# Встановлення вебхука після ініціалізації бота
+bot.set_webhook(url=f"https://kofuka-bk1t.onrender.com/{TOKEN}")
+
 dispatcher = Dispatcher(bot, None, workers=4)
 
 def start(update: Update, context: CallbackContext):
@@ -82,10 +85,11 @@ def register(update: Update, context: CallbackContext):
         update.message.reply_text("Такої групи не знайдено. Виберіть зі списку.")
 
 def menu_keyboard():
-    return ReplyKeyboardMarkup([
-        ["📅 Розклад", "👨‍🏫 Контакти викладачів"],
-        ["👥 Студенти групи"]
-    ], resize_keyboard=True)
+    return ReplyKeyboardMarkup([[
+        "📅 Розклад", "👨‍🏫 Контакти викладачів"
+    ], [
+        "👥 Студенти групи"
+    ]], resize_keyboard=True)
 
 def schedule(update: Update, context: CallbackContext):
     logger.info("Запит розкладу від %s", update.message.from_user.id)
