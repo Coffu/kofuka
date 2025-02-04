@@ -7,6 +7,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 import asyncpg
 import asyncio
 from flask import Flask
+from threading import Thread
 
 # Налаштування логування
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -59,105 +60,6 @@ async def start(message: types.Message):
     except Exception as e:
         logger.error(f"Помилка в обробці команди /start: {e}")
 
-@dp.message()
-async def handle_message(message: types.Message):
-    try:
-        user_id = message.from_user.id
-        logger.info(f"Отримано повідомлення від {user_id}: {message.text}")
-        db = await connect_db()
-
-        if len(message.text.split()) < 2:
-            logger.warning(f"Користувач {user_id} ввів недостатньо інформації для реєстрації")
-            await message.answer("Будь ласка, введіть ім'я та прізвище.")
-            return
-
-        students = await db.fetch("SELECT user_id FROM students WHERE user_id=$1", user_id)
-        if students:
-            logger.info(f"Користувач {user_id} вже зареєстрований")
-            await message.answer("Ви вже зареєстровані!")
-            return
-
-        groups = await db.fetch("SELECT name FROM groups")
-        keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-        for group in groups:
-            keyboard.add(KeyboardButton(group["name"]))
-
-        await db.execute("INSERT INTO students (user_id, name) VALUES ($1, $2)", user_id, message.text)
-        logger.info(f"Користувач {user_id} успішно зареєстрований")
-        await message.answer("Оберіть свою групу:", reply_markup=keyboard)
-    except Exception as e:
-        logger.error(f"Помилка обробки повідомлення: {e}")
-
-@dp.message()
-async def choose_group(message: types.Message):
-    try:
-        user_id = message.from_user.id
-        logger.info(f"Користувач {user_id} вибрав групу: {message.text}")
-        db = await connect_db()
-        group = await db.fetchrow("SELECT id FROM groups WHERE name=$1", message.text)
-
-        if group:
-            await db.execute("UPDATE students SET group_id=$1 WHERE user_id=$2", group["id"], user_id)
-            logger.info(f"Користувач {user_id} успішно вибрав групу {group['id']}")
-            keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-            buttons = [KeyboardButton("Мій розклад"), KeyboardButton("Контакти викладачів"), KeyboardButton("Учні у групі")]
-            keyboard.add(*buttons)
-            await message.answer("Реєстрація завершена! Ось ваші опції:", reply_markup=keyboard)
-        else:
-            logger.warning(f"Користувач {user_id} вибрав неіснуючу групу")
-            await message.answer("Такої групи не існує. Спробуйте ще раз.")
-    except Exception as e:
-        logger.error(f"Помилка обробки вибору групи: {e}")
-
-@dp.message(Command("Контакти викладачів"))
-async def show_teachers(message: types.Message):
-    try:
-        logger.info(f"Користувач {message.from_user.id} запросив контакти викладачів")
-        db = await connect_db()
-        teachers = await db.fetch("SELECT name, subject, email FROM teachers")
-        response = "Контакти викладачів:\n"
-        for teacher in teachers:
-            response += f"{teacher['name']} ({teacher['subject']}): {teacher['email']}\n"
-        await message.answer(response)
-    except Exception as e:
-        logger.error(f"Помилка виведення контактів викладачів: {e}")
-
-@dp.message(Command("Мій розклад"))
-async def show_schedule(message: types.Message):
-    try:
-        logger.info(f"Користувач {message.from_user.id} запросив свій розклад")
-        db = await connect_db()
-        user = await db.fetchrow("SELECT group_id FROM students WHERE user_id=$1", message.from_user.id)
-        if not user:
-            logger.warning(f"Користувач {message.from_user.id} не зареєстрований")
-            await message.answer("Ви ще не зареєстровані!")
-            return
-        schedule = await db.fetch("SELECT subject, day, time, classroom FROM schedule WHERE group_id=$1", user["group_id"])
-        response = "Ваш розклад:\n"
-        for lesson in schedule:
-            response += f"{lesson['day']} {lesson['time']} - {lesson['subject']} (Ауд. {lesson['classroom']})\n"
-        await message.answer(response)
-    except Exception as e:
-        logger.error(f"Помилка виведення розкладу: {e}")
-
-@dp.message(Command("Учні у групі"))
-async def show_students_in_group(message: types.Message):
-    try:
-        logger.info(f"Користувач {message.from_user.id} запросив список учнів у групі")
-        db = await connect_db()
-        user = await db.fetchrow("SELECT group_id FROM students WHERE user_id=$1", message.from_user.id)
-        if not user:
-            logger.warning(f"Користувач {message.from_user.id} не зареєстрований")
-            await message.answer("Ви ще не зареєстровані!")
-            return
-        students = await db.fetch("SELECT name FROM students WHERE group_id=$1", user["group_id"])
-        response = "Учні у вашій групі:\n"
-        for student in students:
-            response += f"{student['name']}\n"
-        await message.answer(response)
-    except Exception as e:
-        logger.error(f"Помилка виведення списку учнів: {e}")
-
 async def main():
     logger.info("Запуск сервера...")
     await delete_webhook()  # Видалити активний вебхук
@@ -165,13 +67,19 @@ async def main():
     await connect_db()
     await dp.start_polling(bot)
 
+def run_flask():
+    logger.info("Запуск Flask-додатка у фоновому потоці")
+    app.run(host="0.0.0.0", port=PORT)
+
 @app.route("/")
 def index():
     logger.info("Головна сторінка запиту доступна")
     return "Бот працює!"
 
 if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
-    loop.create_task(main())
-    logger.info("Запуск Flask-додатка")
-    app.run(host="0.0.0.0", port=PORT)
+    # Запускаємо Flask у фоновому потоці
+    flask_thread = Thread(target=run_flask)
+    flask_thread.start()
+
+    # Запускаємо asyncio-цикл
+    asyncio.run(main())
