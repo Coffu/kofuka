@@ -67,16 +67,16 @@ async def start_command(message: types.Message):
 
 @dp.message(lambda message: message.text == "Почати 🪄")
 async def start_registration(message: types.Message):
-    """ Перевірка користувача та реєстрація """
+    """ Початок реєстрації користувача """
     user_id = message.from_user.id
-    
     db = await connect_db()
+
+    # Перевіряємо, чи користувач вже зареєстрований
     user = await db.fetchrow("SELECT * FROM students WHERE user_id=$1", user_id)
 
     if user:
-        # Якщо користувач вже зареєстрований
+        # Якщо користувач вже зареєстрований, перевіряємо групу
         if user["group_id"]:
-            # Якщо група вибрана, даємо доступ до основних кнопок
             await message.answer("Вітаю! Ось ваші доступні опції:", reply_markup=main_keyboard)
         else:
             # Якщо група не вибрана, пропонуємо вибрати групу
@@ -96,42 +96,46 @@ async def start_registration(message: types.Message):
         # Якщо користувач не зареєстрований, запитуємо ім'я
         await message.answer("Введіть своє ім'я та прізвище для реєстрації:")
 
-        # Очікуємо ім'я користувача
-        @dp.message()
-        async def register_user(message: types.Message):
-            user_name = message.text
-            db = await connect_db()
+        # Додаємо нову фічу: створюємо стан реєстрації, щоб запитати групу після ім'я
+        await dp.message_handler(lambda message: True)(save_name_for_registration)
 
-            # Додаємо нового користувача в базу
-            await db.execute("INSERT INTO students (user_id, name) VALUES ($1, $2)", user_id, user_name)
-            await message.answer(f"Ваше ім'я {user_name} було успішно зареєстровано! Тепер виберіть групу.")
+# Окремий хендлер для збереження імені користувача в базі
+async def save_name_for_registration(message: types.Message):
+    """ Збереження імені користувача в базі даних та запит групи """
+    user_id = message.from_user.id
+    user_name = message.text
+    db = await connect_db()
 
-            # Отримуємо список груп
-            groups = await db.fetch("SELECT id, name FROM groups")
-            keyboard = ReplyKeyboardMarkup(
-                keyboard=[[KeyboardButton(text=group["name"])] for group in groups],
-                resize_keyboard=True,
-                one_time_keyboard=True
-            )
-            await message.answer("Оберіть свою групу:", reply_markup=keyboard)
+    # Додаємо користувача в базу даних
+    await db.execute("INSERT INTO students (user_id, name) VALUES ($1, $2)", user_id, user_name)
+    await message.answer(f"Ваше ім'я {user_name} було успішно зареєстровано! Тепер виберіть свою групу.")
+
+    # Запитуємо групу
+    groups = await db.fetch("SELECT id, name FROM groups")
+    keyboard = ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text=group["name"])] for group in groups],
+        resize_keyboard=True,
+        one_time_keyboard=True
+    )
+    await message.answer("Оберіть свою групу:", reply_markup=keyboard)
 
 @dp.message()
 async def handle_group_selection(message: types.Message):
-    """ Вибір групи """
+    """ Вибір групи після того, як користувач введе ім'я """
     user_id = message.from_user.id
     db = await connect_db()
 
-    # Перевірка, чи користувач вже зареєстрований і вибрав групу
+    # Перевіряємо, чи користувач уже зареєстрований
     user = await db.fetchrow("SELECT * FROM students WHERE user_id=$1", user_id)
-    if user and user["group_id"]:
-        # Якщо група вже вибрана, даємо доступ до основних функцій
-        await message.answer("Вітаю! Ось ваші доступні опції:", reply_markup=main_keyboard)
+
+    if not user:
+        await message.answer("Будь ласка, спочатку введіть своє ім'я для реєстрації.")
         return
-    
-    # Якщо група ще не вибрана, отримуємо список груп
+
+    # Якщо користувач вибрав групу, оновлюємо інформацію в базі
     group_name = message.text
     group = await db.fetchrow("SELECT id FROM groups WHERE name=$1", group_name)
-    
+
     if not group:
         await message.answer("Такої групи немає. Виберіть правильну групу.")
         return
