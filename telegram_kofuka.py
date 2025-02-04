@@ -48,11 +48,13 @@ async def start(message: types.Message):
         db = await connect_db()
         user = await db.fetchrow("SELECT * FROM students WHERE user_id=$1", message.from_user.id)
         if user:
+            logger.info(f"Користувач {message.from_user.id} вже зареєстрований")
             keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
             buttons = [KeyboardButton("Мій розклад"), KeyboardButton("Контакти викладачів"), KeyboardButton("Учні у групі")]
             keyboard.add(*buttons)
             await message.answer("Вітаю! Ось ваші доступні опції:", reply_markup=keyboard)
         else:
+            logger.info(f"Користувач {message.from_user.id} не зареєстрований. Запит імені та прізвища.")
             await message.answer("Введіть своє ім'я та прізвище для реєстрації:")
     except Exception as e:
         logger.error(f"Помилка в обробці команди /start: {e}")
@@ -61,14 +63,17 @@ async def start(message: types.Message):
 async def handle_message(message: types.Message):
     try:
         user_id = message.from_user.id
+        logger.info(f"Отримано повідомлення від {user_id}: {message.text}")
         db = await connect_db()
 
         if len(message.text.split()) < 2:
+            logger.warning(f"Користувач {user_id} ввів недостатньо інформації для реєстрації")
             await message.answer("Будь ласка, введіть ім'я та прізвище.")
             return
 
         students = await db.fetch("SELECT user_id FROM students WHERE user_id=$1", user_id)
         if students:
+            logger.info(f"Користувач {user_id} вже зареєстрований")
             await message.answer("Ви вже зареєстровані!")
             return
 
@@ -78,6 +83,7 @@ async def handle_message(message: types.Message):
             keyboard.add(KeyboardButton(group["name"]))
 
         await db.execute("INSERT INTO students (user_id, name) VALUES ($1, $2)", user_id, message.text)
+        logger.info(f"Користувач {user_id} успішно зареєстрований")
         await message.answer("Оберіть свою групу:", reply_markup=keyboard)
     except Exception as e:
         logger.error(f"Помилка обробки повідомлення: {e}")
@@ -86,16 +92,19 @@ async def handle_message(message: types.Message):
 async def choose_group(message: types.Message):
     try:
         user_id = message.from_user.id
+        logger.info(f"Користувач {user_id} вибрав групу: {message.text}")
         db = await connect_db()
         group = await db.fetchrow("SELECT id FROM groups WHERE name=$1", message.text)
 
         if group:
             await db.execute("UPDATE students SET group_id=$1 WHERE user_id=$2", group["id"], user_id)
+            logger.info(f"Користувач {user_id} успішно вибрав групу {group['id']}")
             keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
             buttons = [KeyboardButton("Мій розклад"), KeyboardButton("Контакти викладачів"), KeyboardButton("Учні у групі")]
             keyboard.add(*buttons)
             await message.answer("Реєстрація завершена! Ось ваші опції:", reply_markup=keyboard)
         else:
+            logger.warning(f"Користувач {user_id} вибрав неіснуючу групу")
             await message.answer("Такої групи не існує. Спробуйте ще раз.")
     except Exception as e:
         logger.error(f"Помилка обробки вибору групи: {e}")
@@ -103,6 +112,7 @@ async def choose_group(message: types.Message):
 @dp.message(Command("Контакти викладачів"))
 async def show_teachers(message: types.Message):
     try:
+        logger.info(f"Користувач {message.from_user.id} запросив контакти викладачів")
         db = await connect_db()
         teachers = await db.fetch("SELECT name, subject, email FROM teachers")
         response = "Контакти викладачів:\n"
@@ -115,9 +125,11 @@ async def show_teachers(message: types.Message):
 @dp.message(Command("Мій розклад"))
 async def show_schedule(message: types.Message):
     try:
+        logger.info(f"Користувач {message.from_user.id} запросив свій розклад")
         db = await connect_db()
         user = await db.fetchrow("SELECT group_id FROM students WHERE user_id=$1", message.from_user.id)
         if not user:
+            logger.warning(f"Користувач {message.from_user.id} не зареєстрований")
             await message.answer("Ви ще не зареєстровані!")
             return
         schedule = await db.fetch("SELECT subject, day, time, classroom FROM schedule WHERE group_id=$1", user["group_id"])
@@ -131,9 +143,11 @@ async def show_schedule(message: types.Message):
 @dp.message(Command("Учні у групі"))
 async def show_students_in_group(message: types.Message):
     try:
+        logger.info(f"Користувач {message.from_user.id} запросив список учнів у групі")
         db = await connect_db()
         user = await db.fetchrow("SELECT group_id FROM students WHERE user_id=$1", message.from_user.id)
         if not user:
+            logger.warning(f"Користувач {message.from_user.id} не зареєстрований")
             await message.answer("Ви ще не зареєстровані!")
             return
         students = await db.fetch("SELECT name FROM students WHERE group_id=$1", user["group_id"])
@@ -153,9 +167,11 @@ async def main():
 
 @app.route("/")
 def index():
+    logger.info("Головна сторінка запиту доступна")
     return "Бот працює!"
 
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()
     loop.create_task(main())
+    logger.info("Запуск Flask-додатка")
     app.run(host="0.0.0.0", port=PORT)
