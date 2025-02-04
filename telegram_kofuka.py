@@ -25,12 +25,7 @@ dp = Dispatcher(storage=storage)
 
 app = Flask(__name__)
 
-logger.info(f"DATABASE_URL: {DATABASE_URL}")
-
 db_pool = None  # Пул підключень до БД
-
-# Кеш зареєстрованих користувачів
-registered_users = {}
 
 async def connect_db():
     global db_pool
@@ -50,7 +45,6 @@ async def delete_webhook():
 main_keyboard = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="Мій розклад 📅")],
-        [KeyboardButton(text="Контакти викладачів 👨‍🏫")],
         [KeyboardButton(text="Учні у групі 👥")]
     ],
     resize_keyboard=True
@@ -75,87 +69,106 @@ async def start_registration(message: types.Message):
     """ Перевірка користувача та реєстрація """
     user_id = message.from_user.id
     
-    if user_id in registered_users:
-        await message.answer("Вітаю! Ось ваші доступні опції:", reply_markup=main_keyboard)
-        return
-    
     db = await connect_db()
     user = await db.fetchrow("SELECT * FROM students WHERE user_id=$1", user_id)
 
     if user:
-        registered_users[user_id] = user["group_id"]
-        await message.answer("Вітаю! Ось ваші доступні опції:", reply_markup=main_keyboard)
+        # Якщо користувач вже зареєстрований
+        if user["group_id"]:
+            # Якщо група вибрана, даємо доступ до основних кнопок
+            await message.answer("Вітаю! Ось ваші доступні опції:", reply_markup=main_keyboard)
+        else:
+            # Якщо група не вибрана, пропонуємо вибрати групу
+            groups = await db.fetch("SELECT id, name FROM groups")
+            if not groups:
+                await message.answer("У системі немає доступних груп.")
+                return
+
+            keyboard = ReplyKeyboardMarkup(
+                keyboard=[[KeyboardButton(text=group["name"])] for group in groups],
+                resize_keyboard=True,
+                one_time_keyboard=True
+            )
+            await message.answer("Оберіть свою групу:", reply_markup=keyboard)
+        return
     else:
+        # Якщо користувач не зареєстрований
         await message.answer("Введіть своє ім'я та прізвище для реєстрації:")
 
 @dp.message()
 async def handle_registration(message: types.Message):
     """ Реєстрація користувача """
     user_id = message.from_user.id
-    if user_id in registered_users:
-        return
     
+    # Якщо користувач вже зареєстрований, нічого не робимо
     db = await connect_db()
-    
-    # Перевірка на дублікати імен у базі
-    name_parts = message.text.split()
-    if len(name_parts) < 2:
-        await message.answer("Будь ласка, введіть своє ім'я та прізвище (наприклад: Іван Іванов).")
-        return
-    
-    full_name = " ".join(name_parts)
-    existing_user = await db.fetchrow("SELECT * FROM students WHERE name=$1", full_name)
-    
-    if existing_user:
-        await message.answer("Такий користувач вже існує. Введіть інше ім'я та прізвище.")
-        return
-    
-    # Додавання користувача до бази даних
-    await db.execute("INSERT INTO students (user_id, name) VALUES ($1, $2)", user_id, full_name)
-    
-    # Вибір групи
-    groups = await db.fetch("SELECT id, name FROM groups")
-    if not groups:
-        await message.answer("У системі немає доступних груп.")
-        return
-    
-    keyboard = ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text=group["name"])] for group in groups],
-        resize_keyboard=True,
-        one_time_keyboard=True
-    )
-    registered_users[user_id] = None
-    await message.answer("Оберіть свою групу:", reply_markup=keyboard)
+    user = await db.fetchrow("SELECT * FROM students WHERE user_id=$1", user_id)
+
+    if user:
+        if user["group_id"]:
+            # Якщо група вже вибрана, не робимо нічого
+            return
+        else:
+            # Якщо група не вибрана, пропонуємо вибрати групу
+            groups = await db.fetch("SELECT id, name FROM groups")
+            if not groups:
+                await message.answer("У системі немає доступних груп.")
+                return
+
+            keyboard = ReplyKeyboardMarkup(
+                keyboard=[[KeyboardButton(text=group["name"])] for group in groups],
+                resize_keyboard=True,
+                one_time_keyboard=True
+            )
+            await message.answer("Оберіть свою групу:", reply_markup=keyboard)
+    else:
+        # Якщо користувач не знайдений у базі, реєструємо його
+        name_parts = message.text.split()
+        if len(name_parts) < 2:
+            await message.answer("Будь ласка, введіть своє ім'я та прізвище (наприклад: Іван Іванов).")
+            return
+
+        full_name = " ".join(name_parts)
+        await db.execute("INSERT INTO students (user_id, name) VALUES ($1, $2)", user_id, full_name)
+
+        # Отримуємо список груп
+        groups = await db.fetch("SELECT id, name FROM groups")
+        if not groups:
+            await message.answer("У системі немає доступних груп.")
+            return
+
+        keyboard = ReplyKeyboardMarkup(
+            keyboard=[[KeyboardButton(text=group["name"])] for group in groups],
+            resize_keyboard=True,
+            one_time_keyboard=True
+        )
+        await message.answer("Оберіть свою групу:", reply_markup=keyboard)
 
 @dp.message()
 async def handle_group_selection(message: types.Message):
     """ Вибір групи """
     user_id = message.from_user.id
-    
-    # Перевірка, чи користувач вже зареєстрований
-    if user_id not in registered_users or registered_users[user_id] is not None:
+    db = await connect_db()
+
+    # Перевірка, чи користувач вже зареєстрований і вибрав групу
+    user = await db.fetchrow("SELECT * FROM students WHERE user_id=$1", user_id)
+    if user and user["group_id"]:
+        # Якщо група вже вибрана, даємо доступ до основних функцій
+        await message.answer("Вітаю! Ось ваші доступні опції:", reply_markup=main_keyboard)
         return
     
-    db = await connect_db()
-    
-    # Отримуємо інформацію про групу, вибрану користувачем
+    # Якщо група ще не вибрана, отримуємо список груп
     group_name = message.text
     group = await db.fetchrow("SELECT id FROM groups WHERE name=$1", group_name)
     
     if not group:
         await message.answer("Такої групи немає. Виберіть правильну групу.")
         return
-    
-    # Логування для перевірки
-    logger.info(f"User {user_id} вибрав групу: {group_name}")
-    
-    # Оновлення запису користувача з обраною групою
+
+    # Оновлюємо інформацію про групу користувача
     await db.execute("UPDATE students SET group_id=$1 WHERE user_id=$2", group["id"], user_id)
     
-    # Додаємо користувача в кеш
-    registered_users[user_id] = group["id"]
-    
-    # Після реєстрації відправляємо повідомлення з доступними опціями
+    # Після вибору групи надаємо доступ до основних функцій
     await message.answer("Ви успішно зареєстровані! Ось ваші доступні опції:", reply_markup=main_keyboard)
 
 @dp.message(lambda message: message.text == "Мій розклад 📅")
@@ -165,8 +178,8 @@ async def my_schedule(message: types.Message):
     db = await connect_db()
     student = await db.fetchrow("SELECT group_id FROM students WHERE user_id=$1", user_id)
     
-    if not student:
-        await message.answer("Вас не знайдено у базі.")
+    if not student or not student["group_id"]:
+        await message.answer("Вам потрібно вибрати групу перед переглядом розкладу.")
         return
 
     schedule = await db.fetch("SELECT day, subject, time FROM schedule WHERE group_id=$1", student["group_id"])
