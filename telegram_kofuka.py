@@ -1,9 +1,10 @@
 import os
 import logging
 import asyncio
-from aiogram import Bot, Dispatcher, types
-from aiogram.fsm.context import FSMContext  # Замінили на новий шлях імпорту
+from aiogram import Bot, types
+from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
+from aiogram.router import Router
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 import asyncpg
 from flask import Flask
@@ -22,9 +23,11 @@ TOKEN = os.getenv("BOT_TOKEN")  # Токен бота
 DATABASE_URL = os.getenv("DATABASE_URL")  # URL бази даних
 PORT = int(os.getenv("PORT", 5000))
 
-# Створення об'єктів бота та диспетчера
+# Створення об'єкта бота
 bot = Bot(token=TOKEN)
-dp = Dispatcher(bot)
+
+# Створення Router для диспетчера
+router = Router()
 
 # Ініціалізація Flask додатку
 app = Flask(__name__)
@@ -47,13 +50,13 @@ start_keyboard = ReplyKeyboardMarkup(
     resize_keyboard=True
 )
 
-@dp.message_handler(commands=["start"])
+@router.message(commands=["start"])
 async def start_command(message: types.Message):
     """ Вітання користувача """
     logger.info(f"Користувач {message.from_user.id} виконав команду /start")
     await message.answer("Вітаю! Хочете почати? Натисніть кнопку 'Почати 🪄'.", reply_markup=start_keyboard)
 
-@dp.message_handler(lambda message: message.text == "Почати 🪄")
+@router.message(lambda message: message.text == "Почати 🪄")
 async def start_registration(message: types.Message):
     """ Початок реєстрації користувача """
     user_id = message.from_user.id
@@ -68,7 +71,7 @@ async def start_registration(message: types.Message):
     else:
         # Якщо користувач не зареєстрований
         await message.answer("Введіть своє ім'я та прізвище для реєстрації:")
-        dp.register_message_handler(save_name_for_registration)
+        router.message(lambda message: True)(save_name_for_registration)
 
 async def save_name_for_registration(message: types.Message):
     """ Збереження імені користувача в базі даних """
@@ -91,7 +94,9 @@ def flask_thread():
 
 async def main():
     """ Запуск бота """
-    await dp.start_polling()
+    # Створення диспетчера з router
+    dispatcher = Dispatcher(bot, router=router)
+    await dispatcher.start_polling()
 
 if __name__ == "__main__":
     # Запускаємо Flask у окремому потоці
