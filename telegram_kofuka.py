@@ -4,13 +4,14 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from aiogram.fsm.storage.memory import MemoryStorage
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 import asyncpg
 
-TOKEN = os.getenv("BOT_TOKEN")  # Змінна середовища для токена
-DATABASE_URL = os.getenv("DATABASE_URL")  # URL бази даних
-WEBHOOK_PATH = f"/webhook/{TOKEN}"  # Унікальний шлях для вебхука
-WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # Змінна середовища для вебхука
+# Ініціалізація бота та FastAPI
+TOKEN = os.getenv("BOT_TOKEN")
+DATABASE_URL = os.getenv("DATABASE_URL")
+WEBHOOK_PATH = f"/webhook/{TOKEN}"
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
@@ -47,52 +48,14 @@ async def webhook_handler(update: dict):
 
 @dp.message(Command("start"))
 async def start(message: types.Message):
-    db = await connect_db()
-    user = await db.fetchrow("SELECT * FROM students WHERE user_id=$1", message.from_user.id)
-    if user:
-        keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-        buttons = [KeyboardButton("Мій розклад"), KeyboardButton("Контакти викладачів")]
-        keyboard.add(*buttons)
-        await message.answer("Вітаю! Ось ваші доступні опції:", reply_markup=keyboard)
-    else:
-        await message.answer("Введіть своє ім'я та прізвище для реєстрації:")
-
-@dp.message()
-async def handle_message(message: types.Message):
-    user_id = message.from_user.id
-    db = await connect_db()
-    
-    if len(message.text.split()) < 2:
-        await message.answer("Будь ласка, введіть ім'я та прізвище.")
-        return
-    
-    students = await db.fetch("SELECT user_id FROM students WHERE user_id=$1", user_id)
-    if students:
-        await message.answer("Ви вже зареєстровані!")
-        return
-    
-    groups = await db.fetch("SELECT name FROM groups")
     keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-    for group in groups:
-        keyboard.add(KeyboardButton(group["name"]))
-    
-    await db.execute("INSERT INTO students (user_id, name) VALUES ($1, $2)", user_id, message.text)
-    await message.answer("Оберіть свою групу:", reply_markup=keyboard)
-
-@dp.message()
-async def choose_group(message: types.Message):
-    user_id = message.from_user.id
-    db = await connect_db()
-    group = await db.fetchrow("SELECT id FROM groups WHERE name=$1", message.text)
-    
-    if group:
-        await db.execute("UPDATE students SET group_id=$1 WHERE user_id=$2", group["id"], user_id)
-        keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-        buttons = [KeyboardButton("Мій розклад"), KeyboardButton("Контакти викладачів")]
-        keyboard.add(*buttons)
-        await message.answer("Реєстрація завершена! Ось ваші опції:", reply_markup=keyboard)
-    else:
-        await message.answer("Такої групи не існує. Спробуйте ще раз.")
+    buttons = [
+        KeyboardButton("Мій розклад"),
+        KeyboardButton("Контакти викладачів"),
+        KeyboardButton("Учні у групах")
+    ]
+    keyboard.add(*buttons)
+    await message.answer("Вітаю! Ось ваші доступні опції:", reply_markup=keyboard)
 
 @dp.message(Command("Контакти викладачів"))
 async def show_teachers(message: types.Message):
@@ -116,7 +79,20 @@ async def show_schedule(message: types.Message):
         response += f"{lesson['day']} {lesson['time']} - {lesson['subject']} (Ауд. {lesson['classroom']})\n"
     await message.answer(response)
 
+@dp.message(Command("Учні у групах"))
+async def show_students_in_groups(message: types.Message):
+    db = await connect_db()
+    groups = await db.fetch("SELECT id, name FROM groups")
+    response = "Учні у групах:\n"
+    for group in groups:
+        students = await db.fetch("SELECT name FROM students WHERE group_id=$1", group["id"])
+        response += f"\n{group['name']}:\n"
+        if students:
+            response += "\n".join([student['name'] for student in students]) + "\n"
+        else:
+            response += "Немає студентів у цій групі.\n"
+    await message.answer(response)
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
-
