@@ -1,140 +1,35 @@
-import logging
 import os
+import logging
 from aiogram import Bot, Dispatcher, types
-from aiogram.utils.executor import start_webhook
-import asyncpg
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import Update
+from aiogram.fsm.storage.memory import MemoryStorage
+from fastapi import FastAPI, Request
 
-API_TOKEN = "7703843605:AAGq7-1tAvlBfNGKdtLHwTboO0HRYN3x4gk"
+TOKEN = os.getenv("BOT_TOKEN")  # Змінна середовища для токена
+WEBHOOK_PATH = f"/webhook/{TOKEN}"  # Унікальний шлях для вебхука
+WEBHOOK_URL = "https://kofuka-bk1t.onrender.com" + WEBHOOK_PATH  # Замініть на URL Render
 
-# Отримуємо URL сервера Render
-WEBHOOK_HOST = os.getenv('RENDER_EXTERNAL_HOSTNAME', 'your-default-hostname')
-WEBHOOK_PATH = "/webhook"
-WEBHOOK_URL = f"https://{WEBHOOK_HOST}{WEBHOOK_PATH}"
-PORT = int(os.getenv('PORT', 8000))
+bot = Bot(token=TOKEN)
+dp = Dispatcher(storage=MemoryStorage())
+app = FastAPI()
 
-# Ініціалізація бота і диспетчера
-bot = Bot(token=API_TOKEN)
-dp = Dispatcher(bot)
+logging.basicConfig(level=logging.INFO)
 
-# База даних
-DB_CONFIG = {
-    'user': 'pr_tg_user',
-    'password': 'qKgOhgMjLsfAB1UtWtqHFSNcI7TM1PDT',
-    'database': 'pr_tg',
-    'host': 'dpg-cugmd1bv2p9s73cktkog-a',
-    'port': 5432
-}
-
-async def create_db_pool():
-    return await asyncpg.create_pool(**DB_CONFIG)
-
-db_pool = None
-
-async def on_startup(dp):
-    global db_pool
-    db_pool = await create_db_pool()
+@app.on_event("startup")
+async def on_startup():
     await bot.set_webhook(WEBHOOK_URL)
-    logging.info(f"Бот запущено. Webhook встановлено: {WEBHOOK_URL}")
+    logging.info("Webhook встановлено!")
 
-async def on_shutdown(dp):
-    await bot.delete_webhook()
-    await db_pool.close()
-    logging.info("База даних відключена.")
+@app.post(WEBHOOK_PATH)
+async def webhook_handler(update: dict):
+    telegram_update = Update.model_validate(update)
+    await dp.feed_update(bot, telegram_update)
+    return {"status": "ok"}
 
-# Кнопки меню
-main_menu = ReplyKeyboardMarkup(resize_keyboard=True)
-main_menu.add(KeyboardButton("Розклад"), KeyboardButton("Контакти вчителів"))
-main_menu.add(KeyboardButton("Новини"))
+@dp.message()
+async def echo(message: types.Message):
+    await message.answer("Привіт! Бот працює через вебхук!")
 
-def group_selection_keyboard(groups):
-    keyboard = InlineKeyboardMarkup()
-    for group in groups:
-        keyboard.add(InlineKeyboardButton(group, callback_data=f"select_group:{group}"))
-    return keyboard
-
-@dp.message_handler(commands=['start'])
-async def start_command(message: types.Message):
-    async with db_pool.acquire() as conn:
-        user = await conn.fetchrow("SELECT * FROM users WHERE telegram_id = $1", message.from_user.id)
-        if not user:
-            await message.answer("Вітаємо! Введіть своє ім'я та прізвище для реєстрації:")
-            return
-    await message.answer("Вітаємо у боті помічнику коледжу!", reply_markup=main_menu)
-
-@dp.message_handler()
-async def register_user(message: types.Message):
-    async with db_pool.acquire() as conn:
-        user = await conn.fetchrow("SELECT * FROM users WHERE telegram_id = $1", message.from_user.id)
-        if user:
-            return
-
-        await conn.execute("INSERT INTO users (telegram_id, name) VALUES ($1, $2)", message.from_user.id, message.text)
-
-        groups = await conn.fetch("SELECT group_name FROM groups")
-        group_names = [group['group_name'] for group in groups]
-        await message.answer("Оберіть свою групу:", reply_markup=group_selection_keyboard(group_names))
-
-@dp.callback_query_handler(lambda c: c.data and c.data.startswith('select_group'))
-async def select_group(callback_query: types.CallbackQuery):
-    group_name = callback_query.data.split(':')[1]
-    async with db_pool.acquire() as conn:
-        await conn.execute("UPDATE users SET group_name = $1 WHERE telegram_id = $2", group_name, callback_query.from_user.id)
-    await bot.answer_callback_query(callback_query.id)
-    await bot.send_message(callback_query.from_user.id, "Реєстрація завершена!", reply_markup=main_menu)
-
-@dp.message_handler(lambda message: message.text == "Розклад")
-async def show_schedule(message: types.Message):
-    async with db_pool.acquire() as conn:
-        user = await conn.fetchrow("SELECT * FROM users WHERE telegram_id = $1", message.from_user.id)
-        if not user or not user['group_name']:
-            await message.answer("Ви не зареєстровані або не обрали групу.")
-            return
-
-        schedule = await conn.fetch("SELECT day, subject, time FROM schedule WHERE group_name = $1 ORDER BY day, time", user['group_name'])
-        if not schedule:
-            await message.answer("Розклад відсутній.")
-            return
-
-        response = "Розклад:\n"
-        for record in schedule:
-            response += f"{record['day']} {record['time']}: {record['subject']}\n"
-
-        await message.answer(response)
-
-@dp.message_handler(lambda message: message.text == "Контакти вчителів")
-async def show_teachers(message: types.Message):
-    async with db_pool.acquire() as conn:
-        teachers = await conn.fetch("SELECT name, contact FROM teachers")
-        if not teachers:
-            await message.answer("Контактна інформація відсутня.")
-            return
-
-        response = "Контакти вчителів:\n"
-        for teacher in teachers:
-            response += f"{teacher['name']}: {teacher['contact']}\n"
-
-        await message.answer(response)
-
-@dp.message_handler(lambda message: message.text == "Новини")
-async def show_announcements(message: types.Message):
-    async with db_pool.acquire() as conn:
-        announcements = await conn.fetch("SELECT title, content FROM announcements ORDER BY id DESC LIMIT 5")
-        if not announcements:
-            await message.answer("Новин поки немає.")
-            return
-
-        response = "Останні новини:\n"
-        for news in announcements:
-            response += f"{news['title']}: {news['content']}\n"
-
-        await message.answer(response)
-
-start_webhook(
-    dispatcher=dp,
-    webhook_path=WEBHOOK_PATH,
-    on_startup=on_startup,
-    on_shutdown=on_shutdown,
-    host="0.0.0.0",
-    port=PORT
-)
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
