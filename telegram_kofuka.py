@@ -5,7 +5,7 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 import asyncpg
 
 # Укажіть ваш токен Telegram
-API_TOKEN = "7703843605:AAHmrXmeDGC9NybirXn9IlhMbqSDAtXx1OY"
+API_TOKEN = "7703843605:AAGq7-1tAvlBfNGKdtLHwTboO0HRYN3x4gk"
 ADMIN_PASSWORD = "123456"
 
 # Логування
