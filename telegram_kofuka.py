@@ -98,35 +98,33 @@ async def start_registration(message: types.Message):
         # Якщо користувач не зареєстрований, запитуємо ім'я
         await message.answer("Введіть своє ім'я та прізвище для реєстрації:")
 
-        # Додаємо нову фічу: створюємо стан реєстрації, щоб запитати групу після ім'я
-        await dp.message_handler(lambda message: True)(save_name_for_registration)
+        # Створюємо стан, щоб запитати ім'я, і визначимо окремий хендлер для цього
+        @dp.message()
+        async def save_name_for_registration(message: types.Message):
+            """ Збереження імені користувача в базі даних та запит групи """
+            user_id = message.from_user.id
+            user_name = message.text
+            db = await connect_db()
 
-# Окремий хендлер для збереження імені користувача в базі
-async def save_name_for_registration(message: types.Message):
-    """ Збереження імені користувача в базі даних та запит групи """
-    user_id = message.from_user.id
-    user_name = message.text
-    db = await connect_db()
+            # Додаємо користувача в базу даних
+            logger.info(f"Додаємо користувача {user_id} з ім'ям {user_name} в базу даних.")
+            await db.execute("INSERT INTO students (user_id, name) VALUES ($1, $2)", user_id, user_name)
 
-    # Додаємо користувача в базу даних
-    logger.info(f"Додаємо користувача {user_id} з ім'ям {user_name} в базу даних.")
-    await db.execute("INSERT INTO students (user_id, name) VALUES ($1, $2)", user_id, user_name)
+            # Підтвердження, що ім'я було збережено
+            await message.answer(f"Ваше ім'я {user_name} було успішно зареєстровано! Тепер виберіть свою групу.")
+            
+            # Запитуємо групу
+            groups = await db.fetch("SELECT id, name FROM groups")
+            if not groups:
+                await message.answer("У системі немає доступних груп.")
+                return
 
-    # Підтвердження, що ім'я було збережено
-    await message.answer(f"Ваше ім'я {user_name} було успішно зареєстровано! Тепер виберіть свою групу.")
-    
-    # Запитуємо групу
-    groups = await db.fetch("SELECT id, name FROM groups")
-    if not groups:
-        await message.answer("У системі немає доступних груп.")
-        return
-
-    keyboard = ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text=group["name"])] for group in groups],
-        resize_keyboard=True,
-        one_time_keyboard=True
-    )
-    await message.answer("Оберіть свою групу:", reply_markup=keyboard)
+            keyboard = ReplyKeyboardMarkup(
+                keyboard=[[KeyboardButton(text=group["name"])] for group in groups],
+                resize_keyboard=True,
+                one_time_keyboard=True
+            )
+            await message.answer("Оберіть свою групу:", reply_markup=keyboard)
 
 @dp.message()
 async def handle_group_selection(message: types.Message):
