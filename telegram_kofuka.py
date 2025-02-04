@@ -18,9 +18,9 @@ app = FastAPI()
 logging.basicConfig(level=logging.INFO)
 
 ADMIN_PASSWORD = "123456"
-admin_sessions = set()  # Для збереження активних адмінів
+admin_sessions = set()
 
-db = None  # Глобальна змінна для підключення до БД
+db = None
 
 async def connect_db():
     global db
@@ -35,24 +35,26 @@ async def on_startup():
 
 @app.post(WEBHOOK_PATH)
 async def webhook_handler(update: dict):
-    telegram_update = Update.model_validate(update)
+    telegram_update = types.Update.model_validate(update)
     await dp.feed_update(bot, telegram_update)
     return {"status": "ok"}
 
-@dp.message(commands=["admin"])
+@dp.message(F.text == "/admin")
 async def admin_login(message: types.Message):
     await message.answer("Введіть пароль для входу в адмінку:")
     admin_sessions.add(message.from_user.id)
 
-@dp.message(commands=["add_news"])
-async def add_news(message: types.Message):
+@dp.message(F.text == ADMIN_PASSWORD)
+async def admin_panel(message: types.Message):
     if message.from_user.id in admin_sessions:
-        await message.answer("Введіть заголовок новини:")
-        admin_sessions.add((message.from_user.id, "title"))
+        keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
+        buttons = ["Додати групу", "Видалити групу", "Додати викладача", "Видалити викладача", "Додати розклад", "Видалити розклад", "Додати новину"]
+        keyboard.add(*[KeyboardButton(text=b) for b in buttons])
+        await message.answer("Ви увійшли в адмін-панель!", reply_markup=keyboard)
     else:
-        await message.answer("У вас немає доступу до цієї команди.")
+        await message.answer("Невірний пароль!")
 
-@dp.message(commands=["start"])
+@dp.message(F.text == "/start")
 async def start(message: types.Message):
     user = await db.fetchrow("SELECT * FROM students WHERE user_id=$1", message.from_user.id)
     if user:
@@ -68,9 +70,9 @@ async def handle_message(message: types.Message):
     if session == "register_name":
         admin_sessions[user_id] = message.text
         groups = await db.fetch("SELECT * FROM groups")
-        keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
+        keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
         for group in groups:
-            keyboard.add(types.KeyboardButton(group["name"]))
+            keyboard.add(KeyboardButton(group["name"]))
         await message.answer("Оберіть свою групу:", reply_markup=keyboard)
         admin_sessions[user_id] = "register_group"
     elif session == "register_group":
@@ -78,17 +80,11 @@ async def handle_message(message: types.Message):
         if group:
             await db.execute("INSERT INTO students (user_id, name, group_id) VALUES ($1, $2, $3)", user_id, admin_sessions[user_id], group["id"])
             del admin_sessions[user_id]
-            await message.answer("Реєстрація завершена! Тепер ви можете отримувати розклад і новини коледжа!😎.")
+            await message.answer("Реєстрація завершена! Тепер ви можете отримувати розклад і контакти викладачів.")
         else:
-            await message.answer("Такої групи не існує. Спробуйте ще раз.🥲")
-    elif user_id in admin_sessions:
-        if message.text == ADMIN_PASSWORD:
-            await message.answer("Ви увійшли в адмін-панель!👀 Доступні команди: /add_group, /del_group, /add_teacher, /del_teacher, /add_schedule, /del_schedule, /add_news")
-        else:
-            await message.answer("Невірний пароль!🥲")
-            admin_sessions.remove(user_id)
+            await message.answer("Такої групи не існує. Спробуйте ще раз.")
     else:
-        await message.answer("Привіт! я твій бот-помічник по коледжу!😘")
+        await message.answer("Привіт! Бот працює через вебхук!")
 
 if __name__ == "__main__":
     import uvicorn
