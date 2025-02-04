@@ -13,8 +13,8 @@ logger = logging.getLogger(__name__)
 
 TOKEN = os.getenv("BOT_TOKEN")  # Змінна середовища для токена
 DATABASE_URL = os.getenv("DATABASE_URL")  # URL бази даних
-    PORT = int(os.getenv("PORT", 5000))
-    app.run(host="0.0.0.0", port=PORT)
+PORT = int(os.getenv("PORT", 5000))
+app.run(host="0.0.0.0", port=PORT)
 
 logger.info(f"DATABASE_URL: {DATABASE_URL}")
 
