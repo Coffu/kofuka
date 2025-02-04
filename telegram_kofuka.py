@@ -115,7 +115,7 @@ def webhook():
     return "OK"
 
 bot = Updater(TOKEN, use_context=True).bot
-dispatcher = Dispatcher(bot, None, workers=0)
+dispatcher = Dispatcher(bot, None, workers=4)
 dispatcher.add_handler(CommandHandler("start", start))
 dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
 
