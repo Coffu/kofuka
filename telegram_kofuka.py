@@ -9,7 +9,6 @@ from telegram import Update, ReplyKeyboardMarkup, Bot
 from telegram.ext import CommandHandler, CallbackContext, MessageHandler, Filters, Dispatcher
 
 app = Flask(__name__)
-bot = Bot(token=TOKEN)
 
 bot.set_webhook(url=f"https://kofuka-bk1t.onrender.com{TOKEN}")
 # Налаштування логування
