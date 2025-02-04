@@ -52,13 +52,22 @@ main_menu = ReplyKeyboardMarkup(
     resize_keyboard=True
 )
 
+start_menu = ReplyKeyboardMarkup(
+    keyboard=[[KeyboardButton(text="Почати")]],
+    resize_keyboard=True
+)
+
 @dp.message(Command("start"))
 async def start_command(message: types.Message):
     try:
         logger.info(f"Користувач {message.from_user.id} виконав команду /start")
-        await message.answer("Вітаю! Введіть своє ім'я та прізвище для реєстрації:")
+        await message.answer("Вітаю! Натисніть 'Почати' для реєстрації.", reply_markup=start_menu)
     except Exception as e:
         logger.error(f"Помилка в обробці команди /start: {e}")
+
+@dp.message(lambda message: message.text == "Почати")
+async def start_registration(message: types.Message):
+    await message.answer("Введіть своє ім'я та прізвище для реєстрації:")
 
 @dp.message()
 async def handle_message(message: types.Message):
@@ -129,9 +138,6 @@ async def show_schedule(message: types.Message):
 async def show_teachers(message: types.Message):
     db = await connect_db()
     teachers = await db.fetch("SELECT name, contact FROM teachers")
-    if not teachers:
-        await message.answer("Контакти викладачів не знайдено.")
-        return
     teachers_text = "\n".join([f"{t['name']}: {t['contact']}" for t in teachers])
     await message.answer(f"Контакти викладачів:\n{teachers_text}")
 
@@ -139,9 +145,6 @@ async def show_teachers(message: types.Message):
 async def show_students(message: types.Message):
     db = await connect_db()
     student = await db.fetchrow("SELECT group_id FROM students WHERE user_id=$1", message.from_user.id)
-    if not student:
-        await message.answer("Ви не зареєстровані.")
-        return
     students = await db.fetch("SELECT name FROM students WHERE group_id=$1", student["group_id"])
     students_text = "\n".join([s['name'] for s in students])
     await message.answer(f"Учні вашої групи:\n{students_text}")
