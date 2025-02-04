@@ -1,107 +1,107 @@
 import os
+import json
 import logging
-import asyncio
-from aiogram import Bot, types
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
-from aiogram.router import Router
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
-import asyncpg
-from flask import Flask
-from dotenv import load_dotenv
-import uvicorn
+import psycopg2
+from flask import Flask, request
+from sqlalchemy import create_engine, Column, Integer, String, ForeignKey
+from sqlalchemy.orm import sessionmaker, declarative_base, relationship
+from telegram import Update, ReplyKeyboardMarkup
+from telegram.ext import Updater, CommandHandler, CallbackContext, MessageHandler, Filters, Dispatcher
 
-# Завантаження змінних середовища з .env
-load_dotenv()
+# Завантажуємо змінні середовища
+TOKEN = os.getenv("BOT_TOKEN")
+DATABASE_URL = os.getenv("DATABASE_URL")
 
-# Налаштування логування
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+# Налаштовуємо базу даних
+Base = declarative_base()
+engine = create_engine(DATABASE_URL)
+Session = sessionmaker(bind=engine)
+session = Session()
 
-# Отримання токена та URL бази даних
-TOKEN = os.getenv("BOT_TOKEN")  # Токен бота
-DATABASE_URL = os.getenv("DATABASE_URL")  # URL бази даних
-PORT = int(os.getenv("PORT", 5000))
+# Оголошення моделей
+class Group(Base):
+    __tablename__ = 'groups'
+    id = Column(Integer, primary_key=True)
+    name = Column(String, unique=True, nullable=False)
+    students = relationship("Student", back_populates="group")
 
-# Створення об'єкта бота
-bot = Bot(token=TOKEN)
+class Student(Base):
+    __tablename__ = 'students'
+    id = Column(Integer, primary_key=True)
+    tg_id = Column(String, unique=True, nullable=False)
+    name = Column(String, nullable=False)
+    group_id = Column(Integer, ForeignKey('groups.id'))
+    group = relationship("Group", back_populates="students")
 
-# Створення Router для диспетчера
-router = Router()
+# Створюємо таблиці
+Base.metadata.create_all(engine)
 
-# Ініціалізація Flask додатку
+# Створюємо Flask застосунок
 app = Flask(__name__)
 
-db_pool = None  # Пул підключень до БД
-
-# Підключення до бази даних
-async def connect_db():
-    global db_pool
-    if db_pool is None:
-        logger.info("Підключення до бази даних...")
-        db_pool = await asyncpg.create_pool(DATABASE_URL)
-    return db_pool
-
-# Стартове меню
-start_keyboard = ReplyKeyboardMarkup(
-    keyboard=[
-        [KeyboardButton(text="Почати 🪄")]
-    ],
-    resize_keyboard=True
-)
-
-@router.message(commands=["start"])
-async def start_command(message: types.Message):
-    """ Вітання користувача """
-    logger.info(f"Користувач {message.from_user.id} виконав команду /start")
-    await message.answer("Вітаю! Хочете почати? Натисніть кнопку 'Почати 🪄'.", reply_markup=start_keyboard)
-
-@router.message(lambda message: message.text == "Почати 🪄")
-async def start_registration(message: types.Message):
-    """ Початок реєстрації користувача """
-    user_id = message.from_user.id
-    db = await connect_db()
-
-    # Перевірка, чи є користувач у базі
-    user = await db.fetchrow("SELECT * FROM students WHERE user_id=$1", user_id)
+def start(update: Update, context: CallbackContext):
+    tg_id = str(update.message.from_user.id)
+    user = session.query(Student).filter_by(tg_id=tg_id).first()
     
     if user:
-        # Якщо користувач вже зареєстрований
-        await message.answer("Вітаємо! Ви вже зареєстровані.")
+        update.message.reply_text(f"Вітаю, {user.name}! Ви в групі {user.group.name}.", reply_markup=menu_keyboard())
     else:
-        # Якщо користувач не зареєстрований
-        await message.answer("Введіть своє ім'я та прізвище для реєстрації:")
-        router.message(lambda message: True)(save_name_for_registration)
+        groups = session.query(Group).all()
+        group_names = [[g.name] for g in groups]
+        update.message.reply_text("Ви не зареєстровані. Виберіть вашу групу:", reply_markup=ReplyKeyboardMarkup(group_names, one_time_keyboard=True))
 
-async def save_name_for_registration(message: types.Message):
-    """ Збереження імені користувача в базі даних """
-    user_id = message.from_user.id
-    user_name = message.text
-    db = await connect_db()
+def register(update: Update, context: CallbackContext):
+    tg_id = str(update.message.from_user.id)
+    group_name = update.message.text
+    group = session.query(Group).filter_by(name=group_name).first()
+    
+    if group:
+        student = Student(tg_id=tg_id, name=update.message.from_user.full_name, group=group)
+        session.add(student)
+        session.commit()
+        update.message.reply_text(f"Ви зареєстровані в групі {group.name}", reply_markup=menu_keyboard())
+    else:
+        update.message.reply_text("Такої групи не знайдено. Виберіть зі списку.")
 
-    # Додаємо користувача до бази
-    await db.execute("INSERT INTO students (user_id, name) VALUES ($1, $2)", user_id, user_name)
-    await message.answer(f"Ваше ім'я {user_name} було успішно зареєстроване! Тепер ви можете продовжити.")
+def menu_keyboard():
+    return ReplyKeyboardMarkup([
+        ["📅 Розклад", "👨‍🏫 Контакти викладачів"],
+        ["👥 Студенти групи"]
+    ], resize_keyboard=True)
 
-# Запуск Flask, щоб утримувати сервер живим
-@app.route("/")
-def keep_alive():
-    return "Бот працює!"
+def schedule(update: Update, context: CallbackContext):
+    update.message.reply_text("Тут буде розклад вашої групи.")
 
-def flask_thread():
-    """ Запуск Flask у окремому потоці """
-    app.run(host="0.0.0.0", port=PORT)
+def contacts(update: Update, context: CallbackContext):
+    update.message.reply_text("Тут будуть контакти викладачів.")
 
-async def main():
-    """ Запуск бота """
-    # Створення диспетчера з router
-    dispatcher = Dispatcher(bot, router=router)
-    await dispatcher.start_polling()
+def students(update: Update, context: CallbackContext):
+    tg_id = str(update.message.from_user.id)
+    user = session.query(Student).filter_by(tg_id=tg_id).first()
+    if user:
+        group_students = session.query(Student).filter_by(group_id=user.group_id).all()
+        student_names = "\n".join([s.name for s in group_students])
+        update.message.reply_text(f"Ваші одногрупники:\n{student_names}")
+
+def handle_message(update: Update, context: CallbackContext):
+    if update.message.text in ["📅 Розклад", "👨‍🏫 Контакти викладачів", "👥 Студенти групи"]:
+        commands = {"📅 Розклад": schedule, "👨‍🏫 Контакти викладачів": contacts, "👥 Студенти групи": students}
+        commands[update.message.text](update, context)
+    else:
+        register(update, context)
+
+# Налаштування вебхука
+@app.route(f"/{TOKEN}", methods=["POST"])
+def webhook():
+    update = Update.de_json(request.get_json(), bot)
+    dispatcher.process_update(update)
+    return "OK"
+
+# Ініціалізація бота
+bot = Updater(TOKEN, use_context=True).bot
+dispatcher = Dispatcher(bot, None, workers=0)
+dispatcher.add_handler(CommandHandler("start", start))
+dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
 
 if __name__ == "__main__":
-    # Запускаємо Flask у окремому потоці
-    loop = asyncio.get_event_loop()
-    loop.create_task(main())
-    loop.create_task(flask_thread())
-    logger.info("Бот запускається...")
-    uvicorn.run(app, host="0.0.0.0", port=PORT)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
