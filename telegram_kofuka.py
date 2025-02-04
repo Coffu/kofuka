@@ -86,8 +86,7 @@ async def show_schedule(message: types.Message):
             await message.answer("Розклад відсутній.")
             return
 
-        response = "Розклад:
-"
+        response = "Розклад:\n"
         for record in schedule:
             response += f"{record['day']} {record['time']}: {record['subject']}\n"
 
@@ -102,8 +101,7 @@ async def show_teachers(message: types.Message):
             await message.answer("Контактна інформація відсутня.")
             return
 
-        response = "Контакти вчителів:
-"
+        response = "Контакти вчителів:\n"
         for teacher in teachers:
             response += f"{teacher['name']}: {teacher['contact']}\n"
 
@@ -118,12 +116,51 @@ async def show_announcements(message: types.Message):
             await message.answer("Новин поки немає.")
             return
 
-        response = "Останні новини:
-"
+        response = "Останні новини:\n"
         for news in announcements:
             response += f"{news['title']}: {news['content']}\n"
 
         await message.answer(response)
+
+# Адмін-функціонал
+ADMIN_PASSWORD = "123456"
+admin_users = set()  # Список авторизованих адмінів
+
+# Головне меню адміністратора
+admin_keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
+admin_keyboard.add("➕ Додати користувача", "➖ Видалити користувача")
+admin_keyboard.add("📆 Додати розклад", "📰 Додати новину")
+admin_keyboard.add("🚪 Вийти з адмін-панелі")
+
+@dp.message_handler(commands=['admin'])
+async def admin_login(message: types.Message):
+    await message.answer("Введіть пароль для входу в адмін-панель:")
+
+@dp.message_handler(lambda msg: msg.text == ADMIN_PASSWORD)
+async def admin_access_granted(message: types.Message):
+    admin_users.add(message.from_user.id)
+    await message.answer("✅ Ви увійшли в адмін-панель", reply_markup=admin_keyboard)
+
+@dp.message_handler(lambda msg: msg.text == "🚪 Вийти з адмін-панелі")
+async def admin_logout(message: types.Message):
+    admin_users.discard(message.from_user.id)
+    await message.answer("❌ Ви вийшли з адмін-панелі.", reply_markup=types.ReplyKeyboardRemove())
+
+@dp.message_handler(lambda msg: msg.text in ["➕ Додати користувача", "➖ Видалити користувача",
+                                             "📆 Додати розклад", "📰 Додати новину"])
+async def admin_actions(message: types.Message):
+    if message.from_user.id not in admin_users:
+        await message.answer("❌ У вас немає доступу до адмін-панелі!")
+        return
+
+    if message.text == "➕ Додати користувача":
+        await message.answer("✏️ Введіть дані користувача у форматі:\n`Ім'я, Роль (student/teacher), Група (для студентів)`")
+    elif message.text == "➖ Видалити користувача":
+        await message.answer("✏️ Введіть ID користувача, якого хочете видалити:")
+    elif message.text == "📆 Додати розклад":
+        await message.answer("✏️ Введіть розклад у форматі:\n`Група, Дата, Час, Предмет, Викладач, Аудиторія`")
+    elif message.text == "📰 Додати новину":
+        await message.answer("✏️ Введіть заголовок новини, а потім її текст.")
 
 if __name__ == '__main__':
     async def on_startup(dp):
@@ -136,4 +173,5 @@ if __name__ == '__main__':
         logging.info("База даних відключена.")
 
     executor.start_polling(dp, on_startup=on_startup, on_shutdown=on_shutdown)
+
 
