@@ -149,13 +149,16 @@ async def show_schedule(message: types.Message):
 async def show_teachers(message: types.Message):
     try:
         db = await connect_db()
-        teachers = await db.fetch("SELECT name FROM teachers")
+        teachers = await db.fetch("SELECT name, email FROM teachers")
         if not teachers:
             await message.answer("У системі немає викладачів.")
             return
 
-        response = "\n".join([f"👨‍🏫 {teacher['name']}" for teacher in teachers])
-        await message.answer(f"Контакти викладачів:\n{response}")
+        # Формуємо таблицю контактів викладачів
+        response = "Контакти викладачів:\n"
+        for teacher in teachers:
+            response += f"👨‍🏫 {teacher['name']} - 📧 {teacher['email']}\n"
+        await message.answer(response)
 
     except Exception as e:
         logger.error(f"Помилка при показі викладачів: {e}")
