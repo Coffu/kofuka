@@ -8,8 +8,6 @@ from sqlalchemy.orm import sessionmaker, declarative_base, relationship
 from telegram import Update, ReplyKeyboardMarkup, Bot
 from telegram.ext import CommandHandler, CallbackContext, MessageHandler, Filters, Dispatcher
 
-app = Flask(__name__)
-
 bot.set_webhook(url=f"https://kofuka-bk1t.onrender.com{TOKEN}")
 # Налаштування логування
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
