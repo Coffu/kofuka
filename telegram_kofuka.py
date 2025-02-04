@@ -1,6 +1,6 @@
 import os
 from aiogram import Bot, Dispatcher, types
-from aiogram.fsm import FSMContext
+from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State
 from aiogram.fsm.states import StatesGroup
 from aiogram.utils import executor
