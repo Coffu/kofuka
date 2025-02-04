@@ -34,7 +34,6 @@ db_pool = None
 menu_buttons = ReplyKeyboardMarkup(resize_keyboard=True)
 menu_buttons.add(KeyboardButton("Розклад"))
 menu_buttons.add(KeyboardButton("Новини"))
-menu_buttons.add(KeyboardButton("Адмін-панель"))
 
 admin_users = set()
 
@@ -42,25 +41,6 @@ admin_users = set()
 @dp.message_handler(commands=['start'])
 async def start_command(message: types.Message):
     await message.answer("Вітаємо у боті помічнику коледжу!", reply_markup=menu_buttons)
-
-# Вхід в адмін-панель
-@dp.message_handler(lambda message: message.text == "Адмін-панель")
-async def admin_login(message: types.Message):
-    await message.answer("Введіть пароль для входу в адмін-панель:")
-
-@dp.message_handler(lambda msg: msg.text == ADMIN_PASSWORD)
-async def admin_access_granted(message: types.Message):
-    admin_users.add(message.from_user.id)
-    admin_keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
-    admin_keyboard.add("➕ Додати користувача", "➖ Видалити користувача")
-    admin_keyboard.add("📆 Додати розклад", "📰 Додати новину")
-    admin_keyboard.add("🚪 Вийти з адмін-панелі")
-    await message.answer("✅ Ви увійшли в адмін-панель", reply_markup=admin_keyboard)
-
-@dp.message_handler(lambda msg: msg.text == "🚪 Вийти з адмін-панелі")
-async def admin_logout(message: types.Message):
-    admin_users.discard(message.from_user.id)
-    await message.answer("❌ Ви вийшли з адмін-панелі.", reply_markup=menu_buttons)
 
 # Розклад
 @dp.message_handler(lambda message: message.text == "Розклад")
@@ -77,7 +57,7 @@ async def get_schedule(message: types.Message):
             group_name = user['group_name']
             schedule = await conn.fetch("SELECT date, time, subject, teacher, classroom FROM schedule WHERE group_name = $1 ORDER BY date, time", group_name)
         elif role == 'teacher':
-            schedule = await conn.fetch("SELECT date, time, subject, group_name, classroom FROM schedule WHERE teacher = (SELECT full_name FROM teachers WHERE telegram_id = $1) ORDER BY date, time", user_id)
+            schedule = await conn.fetch("SELECT date, time, subject, group_name, classroom FROM schedule WHERE teacher = (SELECT full_name FROM users WHERE telegram_id = $1) ORDER BY date, time", user_id)
         else:
             await message.answer("Ця функція доступна лише для студентів і викладачів.")
             return
@@ -105,12 +85,26 @@ async def get_announcements(message: types.Message):
             response += f"{announcement['title']} ({announcement['created_at']}):\n{announcement['message']}\n\n"
         await message.answer(response)
 
-# Додавання новин (для адміністраторів)
+# Вхід в адмін-панель
+@dp.message_handler(commands=['admin'])
+async def admin_login(message: types.Message):
+    await message.answer("Введіть пароль для доступу до адмін-панелі:")
+
+    @dp.message_handler()
+    async def check_password(msg: types.Message):
+        if msg.text == ADMIN_PASSWORD:
+            admin_users.add(msg.from_user.id)
+            await msg.answer("Вхід виконано. Ви в адмін-панелі.")
+        else:
+            await msg.answer("Неправильний пароль.")
+
+# Додавання новин (тільки для адмінів)
 @dp.message_handler(commands=['add_news'])
 async def add_announcement(message: types.Message):
     if message.from_user.id not in admin_users:
         await message.answer("Ця команда доступна лише для адміністраторів.")
         return
+
     await message.answer("Введіть новину у форматі: Заголовок | Текст новини")
 
     @dp.message_handler()
