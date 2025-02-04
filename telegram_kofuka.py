@@ -1,4 +1,5 @@
 import logging
+import os
 from aiogram import Bot, Dispatcher, executor, types
 from aiogram.contrib.middlewares.logging import LoggingMiddleware
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
@@ -7,6 +8,7 @@ import asyncpg
 # Укажіть ваш токен Telegram
 API_TOKEN = "7703843605:AAGq7-1tAvlBfNGKdtLHwTboO0HRYN3x4gk"
 
+PORT = os.getenv('PORT', default=8000)
 # Логування
 logging.basicConfig(level=logging.INFO)
 
