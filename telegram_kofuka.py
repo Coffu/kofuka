@@ -2,24 +2,32 @@ import os
 import logging
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, Message
 from aiogram.fsm.storage.memory import MemoryStorage
 import asyncpg
 import asyncio
 from flask import Flask
 from threading import Thread
 
-dp.message.register(my_schedule, lambda message: message.text == "Мій розклад 📅")
-dp.message.register(teacher_contacts, lambda message: message.text == "Контакти викладачів 👨‍🏫")
-dp.message.register(students_in_group, lambda message: message.text == "Учні у групі 👥")
-
 # Налаштування логування
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# Отримання змінних середовища
 TOKEN = os.getenv("BOT_TOKEN")  # Токен бота
 DATABASE_URL = os.getenv("DATABASE_URL")  # URL бази даних
 PORT = int(os.getenv("PORT", 5000))
+
+# Створення об'єктів бота та диспетчера
+bot = Bot(token=TOKEN)
+storage = MemoryStorage()
+dp = Dispatcher(storage=storage)
+
+# Реєстрація хендлерів (переміщено сюди, бо раніше dp не був створений)
+dp.message.register(my_schedule, lambda message: message.text == "Мій розклад 📅")
+dp.message.register(teacher_contacts, lambda message: message.text == "Контакти викладачів 👨‍🏫")
+dp.message.register(students_in_group, lambda message: message.text == "Учні у групі 👥")
+
 
 app = Flask(__name__)
 
