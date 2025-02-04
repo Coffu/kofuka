@@ -50,37 +50,37 @@ main_menu = ReplyKeyboardMarkup(
     resize_keyboard=True
 )
 
-student_panel_menu = ReplyKeyboardMarkup(
-    keyboard=[
-        [KeyboardButton(text="Мій розклад 📅")],
-        [KeyboardButton(text="Контакти викладачів 👨‍🏫")],
-        [KeyboardButton(text="Учні у групі 👥")]
-    ],
-    resize_keyboard=True
-)
-
 @dp.message(Command("start"))
 async def start_command(message: types.Message):
     try:
         logger.info(f"Користувач {message.from_user.id} виконав команду /start")
-        await message.answer("Вітаю! Натисніть кнопку 'Почати 🪄' для продовження.", reply_markup=main_menu)
+        await message.answer("Вітаю! Хочете почати? Натисніть кнопку 'Почати 🪄'.", reply_markup=main_menu)
     except Exception as e:
         logger.error(f"Помилка в обробці команди /start: {e}")
 
 @dp.message(lambda message: message.text == "Почати 🪄")
 async def start_registration(message: types.Message):
     try:
-        logger.info(f"Користувач {message.from_user.id} натиснув 'Почати 🪄'")
+        user_id = message.from_user.id
         db = await connect_db()
-        user = await db.fetchrow("SELECT * FROM students WHERE user_id=$1", message.from_user.id)
+        user = await db.fetchrow("SELECT * FROM students WHERE user_id=$1", user_id)
+
         if user:
-            logger.info(f"Користувач {message.from_user.id} вже зареєстрований")
-            await message.answer("Вітаю! Ось ваші доступні опції:", reply_markup=student_panel_menu)
+            logger.info(f"Користувач {user_id} вже зареєстрований")
+            keyboard = ReplyKeyboardMarkup(
+                keyboard=[
+                    [KeyboardButton(text="Мій розклад 📅")],
+                    [KeyboardButton(text="Контакти викладачів 👨‍🏫")],
+                    [KeyboardButton(text="Учні у групі 👥")]
+                ],
+                resize_keyboard=True
+            )
+            await message.answer("Вітаю! Ось ваші доступні опції:", reply_markup=keyboard)
         else:
-            logger.info(f"Користувач {message.from_user.id} не зареєстрований. Запит імені та прізвища.")
+            logger.info(f"Користувач {user_id} не зареєстрований. Запит імені та прізвища.")
             await message.answer("Введіть своє ім'я та прізвище для реєстрації:")
     except Exception as e:
-        logger.error(f"Помилка в обробці реєстрації: {e}")
+        logger.error(f"Помилка в обробці натискання кнопки 'Почати 🪄': {e}")
 
 @dp.message()
 async def handle_message(message: types.Message):
@@ -90,99 +90,49 @@ async def handle_message(message: types.Message):
 
         logger.info(f"Користувач {user_id} ввів: {message.text}")
 
+        # Перевірка чи є користувач у базі
         student = await db.fetchrow("SELECT * FROM students WHERE user_id=$1", user_id)
+        
         if student:
-            # Якщо користувач вже зареєстрований, показуємо панель учня
-            await message.answer("Вітаю! Ось ваші доступні опції:", reply_markup=student_panel_menu)
-            return
+            logger.info(f"Користувач {user_id} вже зареєстрований")
+            keyboard = ReplyKeyboardMarkup(
+                keyboard=[
+                    [KeyboardButton(text="Мій розклад 📅")],
+                    [KeyboardButton(text="Контакти викладачів 👨‍🏫")],
+                    [KeyboardButton(text="Учні у групі 👥")]
+                ],
+                resize_keyboard=True
+            )
+            await message.answer("Вітаю! Ось ваші доступні опції:", reply_markup=keyboard)
+        else:
+            # Якщо користувач не знайдений, запитуємо ім'я та прізвище
+            name_parts = message.text.split()
+            if len(name_parts) < 2:
+                await message.answer("Будь ласка, введіть своє ім'я та прізвище (наприклад: Іван Іванов).")
+                return
 
-        name_parts = message.text.split()
-        if len(name_parts) < 2:
-            await message.answer("Будь ласка, введіть ім'я та прізвище.")
-            return
+            full_name = " ".join(name_parts)
+            await db.execute("INSERT INTO students (user_id, name) VALUES ($1, $2)", user_id, full_name)
 
-        full_name = " ".join(name_parts)
-        await db.execute("INSERT INTO students (user_id, name) VALUES ($1, $2)", user_id, full_name)
+            logger.info(f"Користувача {user_id} зареєстровано як {full_name}")
+            await message.answer("Вітаємо, ви успішно зареєстровані! Тепер оберіть свою групу:")
+            
+            # Запитуємо список доступних груп
+            groups = await db.fetch("SELECT name FROM groups")
+            if not groups:
+                await message.answer("У системі немає доступних груп.")
+                return
 
-        logger.info(f"Користувача {user_id} зареєстровано як {full_name}")
-
-        # Отримуємо список груп із бази даних
-        groups = await db.fetch("SELECT name FROM groups")
-        if not groups:
-            await message.answer("У системі немає доступних груп.")
-            return
-
-        keyboard = ReplyKeyboardMarkup(
-            keyboard=[[KeyboardButton(text=group["name"])] for group in groups],
-            resize_keyboard=True,
-            one_time_keyboard=True
-        )
-
-        await message.answer("Оберіть свою групу:", reply_markup=keyboard)
-
-    except Exception as e:
-        logger.error(f"Помилка обробки повідомлення: {e}")
-
-# Обробка кнопок панелі учня
-@dp.message(lambda message: message.text == "Мій розклад 📅")
-async def show_schedule(message: types.Message):
-    try:
-        db = await connect_db()
-        user_id = message.from_user.id
-        student = await db.fetchrow("SELECT group_id FROM students WHERE user_id=$1", user_id)
-        if not student:
-            await message.answer("Ви не зареєстровані!")
-            return
-        group_id = student["group_id"]
-        schedule = await db.fetch("SELECT * FROM schedule WHERE group_id=$1", group_id)
-        if not schedule:
-            await message.answer("Розклад ще не додано.")
-            return
-
-        response = "\n".join([f"{item['subject']} - {item['time']}" for item in schedule])
-        await message.answer(f"Ваш розклад:\n{response}")
+            # Генеруємо кнопки для вибору групи
+            keyboard = ReplyKeyboardMarkup(
+                keyboard=[[KeyboardButton(text=group["name"])] for group in groups],
+                resize_keyboard=True,
+                one_time_keyboard=True
+            )
+            await message.answer("Оберіть свою групу:", reply_markup=keyboard)
 
     except Exception as e:
-        logger.error(f"Помилка при показі розкладу: {e}")
-
-@dp.message(lambda message: message.text == "Контакти викладачів 👨‍🏫")
-async def show_teachers(message: types.Message):
-    try:
-        db = await connect_db()
-        teachers = await db.fetch("SELECT name, email FROM teachers")
-        if not teachers:
-            await message.answer("У системі немає викладачів.")
-            return
-
-        # Формуємо таблицю контактів викладачів
-        response = "Контакти викладачів:\n"
-        for teacher in teachers:
-            response += f"👨‍🏫 {teacher['name']} - 📧 {teacher['email']}\n"
-        await message.answer(response)
-
-    except Exception as e:
-        logger.error(f"Помилка при показі викладачів: {e}")
-
-@dp.message(lambda message: message.text == "Учні у групі 👥")
-async def show_groupmates(message: types.Message):
-    try:
-        db = await connect_db()
-        user_id = message.from_user.id
-        student = await db.fetchrow("SELECT group_id FROM students WHERE user_id=$1", user_id)
-        if not student:
-            await message.answer("Ви не зареєстровані!")
-            return
-        group_id = student["group_id"]
-        groupmates = await db.fetch("SELECT name FROM students WHERE group_id=$1", group_id)
-        if not groupmates:
-            await message.answer("В групі немає інших учнів.")
-            return
-
-        response = "\n".join([f"👥 {groupmate['name']}" for groupmate in groupmates])
-        await message.answer(f"Учні вашої групи:\n{response}")
-
-    except Exception as e:
-        logger.error(f"Помилка при показі одногрупників: {e}")
+        logger.error(f"Помилка в обробці повідомлення: {e}")
 
 async def main():
     logger.info("Запуск сервера...")
