@@ -5,7 +5,6 @@ from aiogram.filters import Command
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from aiogram.fsm.storage.memory import MemoryStorage
 import asyncpg
-import asyncio
 from flask import Flask
 from threading import Thread
 
@@ -46,7 +45,7 @@ async def delete_webhook():
 main_keyboard = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="Мій розклад 📅")],
-        [KeyboardButton(text="Контакти викладачів 👨‍🏫")],
+        [KeyboardButton(text="Контакти викладачів 👨‍🎓")],
         [KeyboardButton(text="Учні у групі 👥")]
     ],
     resize_keyboard=True
@@ -119,6 +118,8 @@ async def handle_registration(message: types.Message):
             one_time_keyboard=True
         )
         await message.answer("Оберіть свою групу:", reply_markup=keyboard)
+    except Exception as e:
+        logger.error(f"Помилка в обробці введеного імені: {e}")
 
 @dp.message()
 async def handle_group_selection(message: types.Message):
@@ -140,33 +141,42 @@ async def handle_group_selection(message: types.Message):
 @dp.message(lambda message: message.text == "Мій розклад 📅")
 async def my_schedule(message: types.Message):
     """ Виведення розкладу групи користувача """
-    user_id = message.from_user.id
-    db = await connect_db()
+    try:
+        user_id = message.from_user.id
+        db = await connect_db()
 
-    student = await db.fetchrow("SELECT group_id FROM students WHERE user_id=$1", user_id)
-    if not student:
-        await message.answer("Вас не знайдено у базі.")
-        return
+        student = await db.fetchrow("SELECT group_id FROM students WHERE user_id=$1", user_id)
+        if not student:
+            await message.answer("Вас не знайдено у базі.")
+            return
 
-    schedule = await db.fetch("SELECT day, subject, time FROM schedule WHERE group_id=$1", student["group_id"])
-    schedule_text = "\n".join([f"{row['day']} - {row['subject']} о {row['time']}" for row in schedule]) if schedule else "Розклад відсутній."
-    await message.answer(f"Ваш розклад:\n{schedule_text}")
+        schedule = await db.fetch("SELECT day, subject, time FROM schedule WHERE group_id=$1", student["group_id"])
+        schedule_text = "\n".join([f"{row['day']} - {row['subject']} о {row['time']}" for row in schedule]) if schedule else "Розклад відсутній."
+        await message.answer(f"Ваш розклад:\n{schedule_text}")
+    except Exception as e:
+        logger.error(f"Помилка в обробці розкладу: {e}")
 
-@dp.message(lambda message: message.text == "Контакти викладачів 👨‍🏫")
+@dp.message(lambda message: message.text == "Контакти викладачів 👨‍🎓")
 async def teacher_contacts(message: types.Message):
     """ Виведення контактів викладачів """
-    db = await connect_db()
-    teachers = await db.fetch("SELECT name, phone FROM teachers")
-    contacts_text = "\n".join([f"{row['name']}: {row['phone']}" for row in teachers]) if teachers else "Контакти викладачів недоступні."
-    await message.answer(f"Контакти викладачів:\n{contacts_text}")
+    try:
+        db = await connect_db()
+        teachers = await db.fetch("SELECT name, phone FROM teachers")
+        contacts_text = "\n".join([f"{row['name']}: {row['phone']}" for row in teachers]) if teachers else "Контакти викладачів недоступні."
+        await message.answer(f"Контакти викладачів:\n{contacts_text}")
+    except Exception as e:
+        logger.error(f"Помилка в обробці контактів викладачів: {e}")
 
 @dp.message(lambda message: message.text == "Учні у групі 👥")
 async def students_in_group(message: types.Message):
     """ Виведення списку студентів у групі """
-    user_id = message.from_user.id
-    db = await connect_db()
+    try:
+        user_id = message.from_user.id
+        db = await connect_db()
 
-    student = await db.fetchrow("SELECT group_id FROM students WHERE user_id=$1", user_id)
-    students = await db.fetch("SELECT name FROM students WHERE group_id=$1", student["group_id"]) if student else []
-    students_text = "\n".join([row["name"] for row in students]) if students else "Немає студентів."
-    await message.answer(f"Учні у вашій групі:\n{students_text}")
+        student = await db.fetchrow("SELECT group_id FROM students WHERE user_id=$1", user_id)
+        students = await db.fetch("SELECT name FROM students WHERE group_id=$1", student["group_id"]) if student else []
+        students_text = "\n".join([row["name"] for row in students]) if students else "Немає студентів."
+        await message.answer(f"Учні у вашій групі:\n{students_text}")
+    except Exception as e:
+        logger.error(f"Помилка в обробці списку студентів: {e}")
