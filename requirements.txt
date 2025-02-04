@@ -1,2 +1,2 @@
-aiogram==3.0.0b7
-psycopg2-binary
+aiogram==2.25.1
+asyncpg==0.27.0
