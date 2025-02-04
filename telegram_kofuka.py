@@ -6,7 +6,7 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from aiogram.fsm.storage.memory import MemoryStorage
 import asyncpg
 import asyncio
-from flask import Flask
+from flask import Flask, request
 from threading import Thread
 
 # Налаштування логування
@@ -96,7 +96,7 @@ async def handle_registration_or_menu(message: types.Message):
             return
         
         keyboard = ReplyKeyboardMarkup(
-            keyboard=[[KeyboardButton(text=group["name"])] for group in groups],
+            keyboard=[[KeyboardButton(text=group["name"]) for group in groups]],
             resize_keyboard=True,
             one_time_keyboard=True
         )
@@ -122,3 +122,10 @@ async def handle_registration_or_menu(message: types.Message):
         await message.answer(f"👨‍🎓 Учні вашої групи:\n{students_text}")
     else:
         await message.answer("❓ Невідома команда. Виберіть дію з меню.")
+
+@app.route("/")
+def index():
+    return "Бот працює!"
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=PORT)
