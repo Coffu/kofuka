@@ -1,77 +1,119 @@
 import os
+import logging
 from aiogram import Bot, Dispatcher, types
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State
-from aiogram.fsm.states import StatesGroup
-from aiogram.utils import executor
-from flask import Flask
-from dotenv import load_dotenv
+from aiogram.filters import Command
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+from aiogram.fsm.storage.memory import MemoryStorage
+import asyncpg
 import asyncio
+from flask import Flask
+from threading import Thread
 
-# Завантажуємо змінні середовища з .env файлу
-load_dotenv()
+# Налаштування логування
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-DATABASE_URL = os.getenv("DATABASE_URL")
+# Отримання змінних середовища
+TOKEN = os.getenv("BOT_TOKEN")  # Токен бота
+DATABASE_URL = os.getenv("DATABASE_URL")  # URL бази даних
+PORT = int(os.getenv("PORT", 5000))
 
-# Ініціалізація ботів
-bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher(bot)
+# Створення об'єктів бота та диспетчера
+bot = Bot(token=TOKEN)
+storage = MemoryStorage()
+dp = Dispatcher(storage=storage)
 
-# Стани для FSM (наприклад, для реєстрації)
-class Registration(StatesGroup):
-    waiting_for_name = State()  # Чекаємо ім'я
-
-# Flask додаток
 app = Flask(__name__)
 
-@app.route("/upgrade", methods=["GET"])
-def upgrade():
-    """Метод для прив'язки порту через Flask."""
-    return "Flask сервер працює, бот готовий!"
+db_pool = None  # Пул підключень до БД
 
-# Обробник стартової команди
-@dp.message(commands=["start"])
-async def start(message: types.Message):
-    # Привітання і пропозиція почати реєстрацію
-    await message.answer("Привіт! Якщо ти новий користувач, натисни 'Почати', щоб зареєструватися.", reply_markup=types.ReplyKeyboardMarkup(
-        keyboard=[
-            [types.KeyboardButton(text="Почати")]
-        ], resize_keyboard=True))
+async def connect_db():
+    global db_pool
+    if db_pool is None:
+        logger.info("Підключення до бази даних...")
+        db_pool = await asyncpg.create_pool(DATABASE_URL)
+    return db_pool
 
-# Обробник кнопки "Почати"
-@dp.message(lambda message: message.text.lower() == "почати")
-async def process_start(message: types.Message):
-    # Перевірка, чи є користувач у базі даних
-    # Якщо користувач є в базі, то пропускаємо реєстрацію
-    user_in_db = False  # Замість цього перевірте вашу базу
-    if user_in_db:
-        await message.answer("Ти вже зареєстрований!")
+async def delete_webhook():
+    try:
+        await bot.delete_webhook()
+        logger.info("Вебхук вимкнено.")
+    except Exception as e:
+        logger.error(f"Помилка вимкнення вебхука: {e}")
+
+# Стартове меню
+start_keyboard = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="Почати 🪄")]
+    ],
+    resize_keyboard=True
+)
+
+@dp.message(Command("start"))
+async def start_command(message: types.Message):
+    """ Вітання користувача """
+    logger.info(f"Користувач {message.from_user.id} виконав команду /start")
+    await message.answer("Вітаю! Хочете почати? Натисніть кнопку 'Почати 🪄'.", reply_markup=start_keyboard)
+
+@dp.message(lambda message: message.text == "Почати 🪄")
+async def start_registration(message: types.Message):
+    """ Початок реєстрації користувача """
+    user_id = message.from_user.id
+    db = await connect_db()
+
+    # Перевіряємо, чи користувач вже зареєстрований
+    user = await db.fetchrow("SELECT * FROM students WHERE user_id=$1", user_id)
+
+    if user:
+        # Якщо користувач уже є в базі
+        await message.answer("Вітаємо! Ви вже зареєстровані.")
     else:
-        await message.answer("Для початку реєстрації введіть ваше ім'я:")
-        await Registration.waiting_for_name.set()
+        # Якщо користувач не зареєстрований
+        await message.answer("Введіть своє ім'я та прізвище для реєстрації:")
+        # Зберігаємо ім'я користувача
+        dp.register_message_handler(save_name_for_registration)
 
-# Обробник введення імені
-@dp.message(StateFilter(Registration.waiting_for_name))
-async def save_name_for_registration(message: types.Message, state: FSMContext):
-    # Збереження імені в базу даних (тут додайте ваш код)
+async def save_name_for_registration(message: types.Message):
+    """ Збереження імені користувача в базі даних та повідомлення про успішну реєстрацію """
+    user_id = message.from_user.id
     user_name = message.text
-    await state.update_data(name=user_name)
-    await message.answer(f"Ваше ім'я {user_name} збережено. Реєстрація завершена!")
+    db = await connect_db()
+
+    # Додаємо користувача в базу даних
+    await db.execute("INSERT INTO students (user_id, name) VALUES ($1, $2)", user_id, user_name)
+    await message.answer(f"Ваше ім'я {user_name} було успішно зареєстровано! Тепер ви можете продовжити.")
+
+@dp.message(lambda message: message.text == "Мій розклад 📅")
+async def my_schedule(message: types.Message):
+    """ Виведення розкладу для групи користувача """
+    user_id = message.from_user.id
+    db = await connect_db()
+    student = await db.fetchrow("SELECT group_id FROM students WHERE user_id=$1", user_id)
     
-    # Після реєстрації завершення
-    await state.finish()
+    if not student or not student["group_id"]:
+        await message.answer("Вам потрібно вибрати групу перед переглядом розкладу.")
+        return
 
-# Функція для запуску Flask сервера в окремому потоці
-def run_flask():
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
+    schedule = await db.fetch("SELECT day, subject, time, classroom FROM schedule WHERE group_id=$1", student["group_id"])
+    if schedule:
+        schedule_text = "\n".join([f"{row['day']} - {row['subject']} о {row['time']} в {row['classroom']}" for row in schedule])
+        await message.answer(f"Ваш розклад:\n{schedule_text}")
+    else:
+        await message.answer("Розклад відсутній.")
 
-# Асинхронна функція для запуску бота
-async def start_bot():
-    await executor.start_polling(dp, skip_updates=True)
+@app.route("/")
+def keep_alive():
+    return "Бот працює!"
 
-# Запуск Flask та бота паралельно
+def flask_thread():
+    """ Запуск Flask у потоці """
+    app.run(host="0.0.0.0", port=PORT)
+
+async def main():
+    await delete_webhook()
+    Thread(target=flask_thread).start()
+    logger.info("Бот запускається...")
+    await dp.start_polling(bot)
+
 if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
-    loop.create_task(start_bot())  # Запуск бота
-    run_flask()  # Запуск Flask сервера
+    asyncio.run(main())
