@@ -93,7 +93,7 @@ async def start_registration(message: types.Message):
             await message.answer("Оберіть свою групу:", reply_markup=keyboard)
         return
     else:
-        # Якщо користувач не зареєстрований
+        # Якщо користувач не зареєстрований, запитуємо ім'я
         await message.answer("Введіть своє ім'я та прізвище для реєстрації:")
 
         # Очікуємо ім'я користувача
@@ -104,7 +104,7 @@ async def start_registration(message: types.Message):
 
             # Додаємо нового користувача в базу
             await db.execute("INSERT INTO students (user_id, name) VALUES ($1, $2)", user_id, user_name)
-            await message.answer("Ваше ім'я було успішно зареєстровано! Тепер виберіть групу.")
+            await message.answer(f"Ваше ім'я {user_name} було успішно зареєстровано! Тепер виберіть групу.")
 
             # Отримуємо список груп
             groups = await db.fetch("SELECT id, name FROM groups")
