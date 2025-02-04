@@ -131,16 +131,23 @@ async def handle_registration(message: types.Message):
 async def handle_group_selection(message: types.Message):
     """ Вибір групи """
     user_id = message.from_user.id
+    
+    # Перевірка, чи користувач вже зареєстрований
     if user_id not in registered_users or registered_users[user_id] is not None:
         return
     
     db = await connect_db()
     
     # Отримуємо інформацію про групу, вибрану користувачем
-    group = await db.fetchrow("SELECT id FROM groups WHERE name=$1", message.text)
+    group_name = message.text
+    group = await db.fetchrow("SELECT id FROM groups WHERE name=$1", group_name)
+    
     if not group:
         await message.answer("Такої групи немає. Виберіть правильну групу.")
         return
+    
+    # Логування для перевірки
+    logger.info(f"User {user_id} вибрав групу: {group_name}")
     
     # Оновлення запису користувача з обраною групою
     await db.execute("UPDATE students SET group_id=$1 WHERE user_id=$2", group["id"], user_id)
