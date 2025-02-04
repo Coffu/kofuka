@@ -22,7 +22,7 @@ DB_CONFIG = {
     'password': 'qKgOhgMjLsfAB1UtWtqHFSNcI7TM1PDT',
     'database': 'pr_tg',
     'host': 'dpg-cugmd1bv2p9s73cktkog-a',
-    'port': '5432'
+    'port': 5432
 }
 
 async def create_db_pool():
@@ -30,60 +30,32 @@ async def create_db_pool():
 
 db_pool = None
 
-# Кнопки меню
-menu_buttons = ReplyKeyboardMarkup(resize_keyboard=True)
-menu_buttons.add(KeyboardButton("Розклад"))
-menu_buttons.add(KeyboardButton("Новини"))
-
 admin_users = set()
 
 # Стартова команда
 @dp.message_handler(commands=['start'])
 async def start_command(message: types.Message):
+    async with db_pool.acquire() as conn:
+        user = await conn.fetchrow("SELECT * FROM users WHERE telegram_id = $1", message.from_user.id)
+        if not user:
+            await message.answer("Ви не зареєстровані. Введіть своє ім'я:")
+            return
+    
+    menu_buttons = ReplyKeyboardMarkup(resize_keyboard=True)
+    menu_buttons.add(KeyboardButton("Розклад"))
+    menu_buttons.add(KeyboardButton("Новини"))
     await message.answer("Вітаємо у боті помічнику коледжу!", reply_markup=menu_buttons)
 
-# Розклад
-@dp.message_handler(lambda message: message.text == "Розклад")
-async def get_schedule(message: types.Message):
-    user_id = message.from_user.id
+# Реєстрація користувача
+@dp.message_handler()
+async def register_user(message: types.Message):
     async with db_pool.acquire() as conn:
-        user = await conn.fetchrow("SELECT role, group_name FROM users WHERE telegram_id = $1", user_id)
-        if not user:
-            await message.answer("Вас не знайдено в базі. Зверніться до адміністратора.")
+        user = await conn.fetchrow("SELECT * FROM users WHERE telegram_id = $1", message.from_user.id)
+        if user:
             return
 
-        role = user['role']
-        if role == 'student':
-            group_name = user['group_name']
-            schedule = await conn.fetch("SELECT date, time, subject, teacher, classroom FROM schedule WHERE group_name = $1 ORDER BY date, time", group_name)
-        elif role == 'teacher':
-            schedule = await conn.fetch("SELECT date, time, subject, group_name, classroom FROM schedule WHERE teacher = (SELECT full_name FROM users WHERE telegram_id = $1) ORDER BY date, time", user_id)
-        else:
-            await message.answer("Ця функція доступна лише для студентів і викладачів.")
-            return
-
-        if not schedule:
-            await message.answer("Розклад не знайдено.")
-            return
-
-        response = "Ваш розклад:\n\n"
-        for entry in schedule:
-            response += f"Дата: {entry['date']}, Час: {entry['time']}, Предмет: {entry['subject']}, Викладач: {entry.get('teacher', '-')}, Аудиторія: {entry['classroom']}\n"
-        await message.answer(response)
-
-# Новини
-@dp.message_handler(lambda message: message.text == "Новини")
-async def get_announcements(message: types.Message):
-    async with db_pool.acquire() as conn:
-        announcements = await conn.fetch("SELECT title, message, created_at FROM announcements ORDER BY created_at DESC LIMIT 5")
-        if not announcements:
-            await message.answer("Новин немає.")
-            return
-
-        response = "Останні новини:\n\n"
-        for announcement in announcements:
-            response += f"{announcement['title']} ({announcement['created_at']}):\n{announcement['message']}\n\n"
-        await message.answer(response)
+        await conn.execute("INSERT INTO users (telegram_id, full_name) VALUES ($1, $2)", message.from_user.id, message.text)
+        await message.answer("Тепер виберіть вашу групу.")
 
 # Вхід в адмін-панель
 @dp.message_handler(commands=['admin'])
@@ -94,12 +66,17 @@ async def admin_login(message: types.Message):
     async def check_password(msg: types.Message):
         if msg.text == ADMIN_PASSWORD:
             admin_users.add(msg.from_user.id)
-            await msg.answer("Вхід виконано. Ви в адмін-панелі.")
+            admin_buttons = ReplyKeyboardMarkup(resize_keyboard=True)
+            admin_buttons.add(KeyboardButton("Додати предмет"))
+            admin_buttons.add(KeyboardButton("Додати групу"))
+            admin_buttons.add(KeyboardButton("Додати розклад"))
+            admin_buttons.add(KeyboardButton("Додати новину"))
+            await msg.answer("Вхід виконано. Ви в адмін-панелі.", reply_markup=admin_buttons)
         else:
             await msg.answer("Неправильний пароль.")
 
 # Додавання новин (тільки для адмінів)
-@dp.message_handler(commands=['add_news'])
+@dp.message_handler(lambda message: message.text == "Додати новину")
 async def add_announcement(message: types.Message):
     if message.from_user.id not in admin_users:
         await message.answer("Ця команда доступна лише для адміністраторів.")
