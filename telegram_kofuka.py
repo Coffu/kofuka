@@ -210,4 +210,13 @@ def keep_alive():
 
 def flask_thread():
     """ Запуск Flask у потоці """
-    app.run(host="0.0.0.0", port=PORT
+    app.run(host="0.0.0.0", port=PORT)
+
+async def main():
+    await delete_webhook()
+    Thread(target=flask_thread).start()
+    logger.info("Бот запускається...")
+    await dp.start_polling(bot)
+
+if __name__ == "__main__":
+    asyncio.run(main())
