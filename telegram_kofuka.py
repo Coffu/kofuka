@@ -43,8 +43,12 @@ async def delete_webhook():
         logger.error(f"Помилка видалення вебхука: {e}")
 
 # Створення кнопки "Почати 🪄"
-main_menu = ReplyKeyboardMarkup(resize_keyboard=True)
-main_menu.add(KeyboardButton("Почати 🪄"))
+main_menu = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton("Почати 🪄")]
+    ],
+    resize_keyboard=True
+)
 
 @dp.message(Command("start"))
 async def start_command(message: types.Message):
@@ -62,9 +66,14 @@ async def start_registration(message: types.Message):
         user = await db.fetchrow("SELECT * FROM students WHERE user_id=$1", message.from_user.id)
         if user:
             logger.info(f"Користувач {message.from_user.id} вже зареєстрований")
-            keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-            buttons = [KeyboardButton("Мій розклад"), KeyboardButton("Контакти викладачів"), KeyboardButton("Учні у групі")]
-            keyboard.add(*buttons)
+            keyboard = ReplyKeyboardMarkup(
+                keyboard=[
+                    [KeyboardButton("Мій розклад")],
+                    [KeyboardButton("Контакти викладачів")],
+                    [KeyboardButton("Учні у групі")]
+                ],
+                resize_keyboard=True
+            )
             await message.answer("Вітаю! Ось ваші доступні опції:", reply_markup=keyboard)
         else:
             logger.info(f"Користувач {message.from_user.id} не зареєстрований. Запит імені та прізвища.")
@@ -100,9 +109,11 @@ async def handle_message(message: types.Message):
             await message.answer("У системі немає доступних груп.")
             return
 
-        keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-        for group in groups:
-            keyboard.add(KeyboardButton(group["name"]))
+        keyboard = ReplyKeyboardMarkup(
+            keyboard=[[KeyboardButton(group["name"])] for group in groups],
+            resize_keyboard=True,
+            one_time_keyboard=True
+        )
 
         await message.answer("Оберіть свою групу:", reply_markup=keyboard)
 
