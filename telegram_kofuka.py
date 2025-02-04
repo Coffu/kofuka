@@ -60,6 +60,43 @@ async def start(message: types.Message):
     except Exception as e:
         logger.error(f"Помилка в обробці команди /start: {e}")
 
+@dp.message()
+async def handle_message(message: types.Message):
+    try:
+        user_id = message.from_user.id
+        db = await connect_db()
+
+        logger.info(f"Користувач {user_id} ввів: {message.text}")
+
+        student = await db.fetchrow("SELECT * FROM students WHERE user_id=$1", user_id)
+        if student:
+            await message.answer("Ви вже зареєстровані!")
+            return
+
+        name_parts = message.text.split()
+        if len(name_parts) < 2:
+            await message.answer("Будь ласка, введіть ім'я та прізвище.")
+            return
+
+        full_name = " ".join(name_parts)
+        await db.execute("INSERT INTO students (user_id, name) VALUES ($1, $2)", user_id, full_name)
+
+        logger.info(f"Користувача {user_id} зареєстровано як {full_name}")
+
+        groups = await db.fetch("SELECT name FROM groups")
+        if not groups:
+            await message.answer("У системі немає доступних груп.")
+            return
+
+        keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+        for group in groups:
+            keyboard.add(KeyboardButton(group["name"]))
+
+        await message.answer("Оберіть свою групу:", reply_markup=keyboard)
+
+    except Exception as e:
+        logger.error(f"Помилка обробки повідомлення: {e}")
+
 async def main():
     logger.info("Запуск сервера...")
     await delete_webhook()  # Видалити активний вебхук
@@ -77,9 +114,6 @@ def index():
     return "Бот працює!"
 
 if __name__ == "__main__":
-    # Запускаємо Flask у фоновому потоці
     flask_thread = Thread(target=run_flask)
     flask_thread.start()
-
-    # Запускаємо asyncio-цикл
     asyncio.run(main())
