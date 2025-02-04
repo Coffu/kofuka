@@ -1,23 +1,23 @@
 import logging
 import os
-from aiogram import Bot, Dispatcher, executor, types
-from aiogram.contrib.middlewares.logging import LoggingMiddleware
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram import Bot, Dispatcher, types
+from aiogram.utils.executor import start_webhook
 import asyncpg
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 
-# Укажіть ваш токен Telegram
 API_TOKEN = "7703843605:AAGq7-1tAvlBfNGKdtLHwTboO0HRYN3x4gk"
 
-PORT = os.getenv('PORT', default=8000)
-# Логування
-logging.basicConfig(level=logging.INFO)
+# Отримуємо URL сервера Render
+WEBHOOK_HOST = os.getenv('RENDER_EXTERNAL_HOSTNAME', 'your-default-hostname')
+WEBHOOK_PATH = "/webhook"
+WEBHOOK_URL = f"https://{WEBHOOK_HOST}{WEBHOOK_PATH}"
+PORT = int(os.getenv('PORT', 8000))
 
 # Ініціалізація бота і диспетчера
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher(bot)
-dp.middleware.setup(LoggingMiddleware())
 
-# Підключення до бази даних
+# База даних
 DB_CONFIG = {
     'user': 'pr_tg_user',
     'password': 'qKgOhgMjLsfAB1UtWtqHFSNcI7TM1PDT',
@@ -31,6 +31,17 @@ async def create_db_pool():
 
 db_pool = None
 
+async def on_startup(dp):
+    global db_pool
+    db_pool = await create_db_pool()
+    await bot.set_webhook(WEBHOOK_URL)
+    logging.info(f"Бот запущено. Webhook встановлено: {WEBHOOK_URL}")
+
+async def on_shutdown(dp):
+    await bot.delete_webhook()
+    await db_pool.close()
+    logging.info("База даних відключена.")
+
 # Кнопки меню
 main_menu = ReplyKeyboardMarkup(resize_keyboard=True)
 main_menu.add(KeyboardButton("Розклад"), KeyboardButton("Контакти вчителів"))
@@ -42,7 +53,6 @@ def group_selection_keyboard(groups):
         keyboard.add(InlineKeyboardButton(group, callback_data=f"select_group:{group}"))
     return keyboard
 
-# Стартова команда
 @dp.message_handler(commands=['start'])
 async def start_command(message: types.Message):
     async with db_pool.acquire() as conn:
@@ -52,7 +62,6 @@ async def start_command(message: types.Message):
             return
     await message.answer("Вітаємо у боті помічнику коледжу!", reply_markup=main_menu)
 
-# Реєстрація користувача
 @dp.message_handler()
 async def register_user(message: types.Message):
     async with db_pool.acquire() as conn:
@@ -74,7 +83,6 @@ async def select_group(callback_query: types.CallbackQuery):
     await bot.answer_callback_query(callback_query.id)
     await bot.send_message(callback_query.from_user.id, "Реєстрація завершена!", reply_markup=main_menu)
 
-# Розклад
 @dp.message_handler(lambda message: message.text == "Розклад")
 async def show_schedule(message: types.Message):
     async with db_pool.acquire() as conn:
@@ -94,7 +102,6 @@ async def show_schedule(message: types.Message):
 
         await message.answer(response)
 
-# Контакти вчителів
 @dp.message_handler(lambda message: message.text == "Контакти вчителів")
 async def show_teachers(message: types.Message):
     async with db_pool.acquire() as conn:
@@ -109,7 +116,6 @@ async def show_teachers(message: types.Message):
 
         await message.answer(response)
 
-# Новини
 @dp.message_handler(lambda message: message.text == "Новини")
 async def show_announcements(message: types.Message):
     async with db_pool.acquire() as conn:
@@ -124,56 +130,11 @@ async def show_announcements(message: types.Message):
 
         await message.answer(response)
 
-# Адмін-функціонал
-ADMIN_PASSWORD = "123456"
-admin_users = set()  # Список авторизованих адмінів
-
-# Головне меню адміністратора
-admin_keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
-admin_keyboard.add("➕ Додати користувача", "➖ Видалити користувача")
-admin_keyboard.add("📆 Додати розклад", "📰 Додати новину")
-admin_keyboard.add("🚪 Вийти з адмін-панелі")
-
-@dp.message_handler(commands=['admin'])
-async def admin_login(message: types.Message):
-    await message.answer("Введіть пароль для входу в адмін-панель:")
-
-@dp.message_handler(lambda msg: msg.text == ADMIN_PASSWORD)
-async def admin_access_granted(message: types.Message):
-    admin_users.add(message.from_user.id)
-    await message.answer("✅ Ви увійшли в адмін-панель", reply_markup=admin_keyboard)
-
-@dp.message_handler(lambda msg: msg.text == "🚪 Вийти з адмін-панелі")
-async def admin_logout(message: types.Message):
-    admin_users.discard(message.from_user.id)
-    await message.answer("❌ Ви вийшли з адмін-панелі.", reply_markup=types.ReplyKeyboardRemove())
-
-@dp.message_handler(lambda msg: msg.text in ["➕ Додати користувача", "➖ Видалити користувача",
-                                             "📆 Додати розклад", "📰 Додати новину"])
-async def admin_actions(message: types.Message):
-    if message.from_user.id not in admin_users:
-        await message.answer("❌ У вас немає доступу до адмін-панелі!")
-        return
-
-    if message.text == "➕ Додати користувача":
-        await message.answer("✏️ Введіть дані користувача у форматі:\n`Ім'я, Роль (student/teacher), Група (для студентів)`")
-    elif message.text == "➖ Видалити користувача":
-        await message.answer("✏️ Введіть ID користувача, якого хочете видалити:")
-    elif message.text == "📆 Додати розклад":
-        await message.answer("✏️ Введіть розклад у форматі:\n`Група, Дата, Час, Предмет, Викладач, Аудиторія`")
-    elif message.text == "📰 Додати новину":
-        await message.answer("✏️ Введіть заголовок новини, а потім її текст.")
-
-if __name__ == '__main__':
-    async def on_startup(dp):
-        global db_pool
-        db_pool = await create_db_pool()
-        logging.info("Бот запущено і база даних підключена.")
-
-    async def on_shutdown(dp):
-        await db_pool.close()
-        logging.info("База даних відключена.")
-
-    executor.start_polling(dp, on_startup=on_startup, on_shutdown=on_shutdown)
-
-
+start_webhook(
+    dispatcher=dp,
+    webhook_path=WEBHOOK_PATH,
+    on_startup=on_startup,
+    on_shutdown=on_shutdown,
+    host="0.0.0.0",
+    port=PORT
+)
