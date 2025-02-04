@@ -145,6 +145,18 @@ def index():
     logger.info("Бот працює!")
     return "Бот працює!"
 
-if __name__ == "__main__":
-    logger.info("Запуск бота...")
+def run_flask():
     app.run(host="0.0.0.0", port=PORT)
+
+def run_bot():
+    from aiogram import executor
+    logger.info("Запуск бота...")
+    executor.start_polling(dp, skip_updates=True)
+
+if __name__ == "__main__":
+    # Запуск Flask у окремому потоці
+    flask_thread = Thread(target=run_flask)
+    flask_thread.start()
+
+    # Запуск бота в основному потоці
+    run_bot()
