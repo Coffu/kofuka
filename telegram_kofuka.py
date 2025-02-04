@@ -8,17 +8,14 @@ from sqlalchemy.orm import sessionmaker, declarative_base, relationship
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import Updater, CommandHandler, CallbackContext, MessageHandler, Filters, Dispatcher
 
-# Завантажуємо змінні середовища
 TOKEN = os.getenv("BOT_TOKEN")
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-# Налаштовуємо базу даних
 Base = declarative_base()
 engine = create_engine(DATABASE_URL)
 Session = sessionmaker(bind=engine)
 session = Session()
 
-# Оголошення моделей
 class Group(Base):
     __tablename__ = 'groups'
     id = Column(Integer, primary_key=True)
@@ -33,10 +30,15 @@ class Student(Base):
     group_id = Column(Integer, ForeignKey('groups.id'))
     group = relationship("Group", back_populates="students")
 
-# Створюємо таблиці
+class Teacher(Base):
+    __tablename__ = 'teachers'
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
+    subject = Column(String, nullable=False)
+    contact = Column(String)
+
 Base.metadata.create_all(engine)
 
-# Створюємо Flask застосунок
 app = Flask(__name__)
 
 def start(update: Update, context: CallbackContext):
@@ -70,10 +72,15 @@ def menu_keyboard():
     ], resize_keyboard=True)
 
 def schedule(update: Update, context: CallbackContext):
-    update.message.reply_text("Тут буде розклад вашої групи.")
+    tg_id = str(update.message.from_user.id)
+    user = session.query(Student).filter_by(tg_id=tg_id).first()
+    if user:
+        update.message.reply_text(f"Тут буде розклад для групи {user.group.name}.")
 
 def contacts(update: Update, context: CallbackContext):
-    update.message.reply_text("Тут будуть контакти викладачів.")
+    teachers = session.query(Teacher).all()
+    contacts_list = "\n".join([f"{t.name} ({t.subject}): {t.contact}" for t in teachers])
+    update.message.reply_text(f"Контакти викладачів:\n{contacts_list}")
 
 def students(update: Update, context: CallbackContext):
     tg_id = str(update.message.from_user.id)
@@ -84,20 +91,18 @@ def students(update: Update, context: CallbackContext):
         update.message.reply_text(f"Ваші одногрупники:\n{student_names}")
 
 def handle_message(update: Update, context: CallbackContext):
-    if update.message.text in ["📅 Розклад", "👨‍🏫 Контакти викладачів", "👥 Студенти групи"]:
-        commands = {"📅 Розклад": schedule, "👨‍🏫 Контакти викладачів": contacts, "👥 Студенти групи": students}
+    commands = {"📅 Розклад": schedule, "👨‍🏫 Контакти викладачів": contacts, "👥 Студенти групи": students}
+    if update.message.text in commands:
         commands[update.message.text](update, context)
     else:
         register(update, context)
 
-# Налаштування вебхука
 @app.route(f"/{TOKEN}", methods=["POST"])
 def webhook():
     update = Update.de_json(request.get_json(), bot)
     dispatcher.process_update(update)
     return "OK"
 
-# Ініціалізація бота
 bot = Updater(TOKEN, use_context=True).bot
 dispatcher = Dispatcher(bot, None, workers=0)
 dispatcher.add_handler(CommandHandler("start", start))
