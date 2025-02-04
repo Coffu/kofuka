@@ -6,6 +6,7 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from aiogram.fsm.storage.memory import MemoryStorage
 import asyncpg
 import asyncio
+from flask import Flask
 
 # Налаштування логування
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -14,12 +15,16 @@ logger = logging.getLogger(__name__)
 TOKEN = os.getenv("BOT_TOKEN")  # Змінна середовища для токена
 DATABASE_URL = os.getenv("DATABASE_URL")  # URL бази даних
 PORT = int(os.getenv("PORT", 5000))
-app.run(host="0.0.0.0", port=PORT)
-
-logger.info(f"DATABASE_URL: {DATABASE_URL}")
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
+
+# Flask додаток
+app = Flask(__name__)
+
+@app.route('/')
+def index():
+    return "Бот працює!"
 
 db_pool = None  # Глобальне підключення до БД
 
@@ -147,7 +152,8 @@ async def main():
     await delete_webhook()  # Видалити активний вебхук
     logger.info("Запуск бота в режимі polling...")
     await connect_db()
-    await dp.start_polling(bot)
+    asyncio.create_task(dp.start_polling(bot))
+    app.run(host="0.0.0.0", port=PORT)  # Запуск Flask
 
 if __name__ == "__main__":
     asyncio.run(main())
