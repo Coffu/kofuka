@@ -96,21 +96,24 @@ async def handle_registration(message: types.Message):
         return
     
     db = await connect_db()
-    user = await db.fetchrow("SELECT * FROM students WHERE user_id=$1", user_id)
     
-    if user:
-        registered_users[user_id] = user["group_id"]
-        await message.answer("Вітаю! Ось ваші доступні опції:", reply_markup=main_keyboard)
-        return
-
+    # Перевірка на дублікати імен у базі
     name_parts = message.text.split()
     if len(name_parts) < 2:
         await message.answer("Будь ласка, введіть своє ім'я та прізвище (наприклад: Іван Іванов).")
         return
-
+    
     full_name = " ".join(name_parts)
+    existing_user = await db.fetchrow("SELECT * FROM students WHERE name=$1", full_name)
+    
+    if existing_user:
+        await message.answer("Такий користувач вже існує. Введіть інше ім'я та прізвище.")
+        return
+    
+    # Додавання користувача до бази даних
     await db.execute("INSERT INTO students (user_id, name) VALUES ($1, $2)", user_id, full_name)
     
+    # Вибір групи
     groups = await db.fetch("SELECT id, name FROM groups")
     if not groups:
         await message.answer("У системі немає доступних груп.")
@@ -132,13 +135,20 @@ async def handle_group_selection(message: types.Message):
         return
     
     db = await connect_db()
+    
+    # Отримуємо інформацію про групу, вибрану користувачем
     group = await db.fetchrow("SELECT id FROM groups WHERE name=$1", message.text)
     if not group:
         await message.answer("Такої групи немає. Виберіть правильну групу.")
         return
     
+    # Оновлення запису користувача з обраною групою
     await db.execute("UPDATE students SET group_id=$1 WHERE user_id=$2", group["id"], user_id)
+    
+    # Додаємо користувача в кеш
     registered_users[user_id] = group["id"]
+    
+    # Після реєстрації відправляємо повідомлення з доступними опціями
     await message.answer("Ви успішно зареєстровані! Ось ваші доступні опції:", reply_markup=main_keyboard)
 
 @dp.message(lambda message: message.text == "Мій розклад 📅")
