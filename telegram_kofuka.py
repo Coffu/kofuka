@@ -29,7 +29,7 @@ db_pool = None  # Глобальне підключення до БД
 async def connect_db():
     global db_pool
     if db_pool is None:
-        logger.info("Підключення до бази даних...")
+        logger.info("\U0001F4BB Підключення до бази даних...")
         db_pool = await asyncpg.create_pool(DATABASE_URL)
     return db_pool
 
@@ -37,95 +37,84 @@ async def delete_webhook():
     try:
         webhook_info = await bot.get_webhook_info()
         if webhook_info.url:
-            logger.info(f"Видалення активного вебхука: {webhook_info.url}")
+            logger.info(f"\U0001F5D1 Видалення активного вебхука: {webhook_info.url}")
             await bot.delete_webhook()
     except Exception as e:
-        logger.error(f"Помилка видалення вебхука: {e}")
+        logger.error(f"\U000026A0 Помилка видалення вебхука: {e}")
 
-# Створення головного меню
+# Головне меню
 main_menu = ReplyKeyboardMarkup(
     keyboard=[
-        [KeyboardButton(text="Мій розклад")],
-        [KeyboardButton(text="Контакти викладачів")],
-        [KeyboardButton(text="Учні у групі")]
+        [KeyboardButton(text="📅 Мій розклад")],
+        [KeyboardButton(text="📚 Контакти викладачів")],
+        [KeyboardButton(text="👥 Учні у групі")]
     ],
     resize_keyboard=True
 )
 
 start_menu = ReplyKeyboardMarkup(
-    keyboard=[[KeyboardButton(text="Почати")]],
+    keyboard=[[KeyboardButton(text="🚀 Почати")]],
     resize_keyboard=True
 )
 
 @dp.message(Command("start"))
 async def start_command(message: types.Message):
+    await message.answer("👋 Вітаю! Я ваш навчальний бот. Натисніть '🚀 Почати', щоб продовжити.", reply_markup=start_menu)
+
+@dp.message(lambda message: message.text == "🚀 Почати")
+async def start_registration(message: types.Message):
+    db = await connect_db()
+    user_id = message.from_user.id
+    student = await db.fetchrow("SELECT name FROM students WHERE user_id=$1", user_id)
+    
+    if student:
+        await message.answer(f"🎉 Вітаю, {student['name']}! Обирайте дію з меню.", reply_markup=main_menu)
+    else:
+        await message.answer("📝 Введіть своє ім'я та прізвище для реєстрації:")
+
+@dp.message()
+async def handle_registration_or_menu(message: types.Message):
     db = await connect_db()
     user_id = message.from_user.id
     student = await db.fetchrow("SELECT * FROM students WHERE user_id=$1", user_id)
-    if student:
-        await message.answer("Ви вже зареєстровані!", reply_markup=main_menu)
-    else:
-        await message.answer("Вітаю! Натисніть 'Почати' для реєстрації.", reply_markup=start_menu)
-
-@dp.message(lambda message: message.text == "Почати")
-async def start_registration(message: types.Message):
-    await message.answer("Введіть своє ім'я та прізвище для реєстрації:")
-
-@dp.message()
-async def handle_registration(message: types.Message):
-    try:
-        user_id = message.from_user.id
-        db = await connect_db()
-        student = await db.fetchrow("SELECT * FROM students WHERE user_id=$1", user_id)
-        if student:
-            await message.answer("Ви вже зареєстровані!", reply_markup=main_menu)
-            return
-
+    
+    if not student:
         name_parts = message.text.split()
         if len(name_parts) < 2:
-            await message.answer("Будь ласка, введіть ім'я та прізвище.")
+            await message.answer("⚠ Будь ласка, введіть ім'я та прізвище.")
             return
-
+        
         full_name = " ".join(name_parts)
         await db.execute("INSERT INTO students (user_id, name) VALUES ($1, $2)", user_id, full_name)
-
+        
         groups = await db.fetch("SELECT name FROM groups")
         if not groups:
-            await message.answer("У системі немає доступних груп.")
+            await message.answer("❌ У системі немає доступних груп.")
             return
-
+        
         keyboard = ReplyKeyboardMarkup(
             keyboard=[[KeyboardButton(text=group["name"])] for group in groups],
             resize_keyboard=True,
             one_time_keyboard=True
         )
-        await message.answer("Оберіть свою групу:", reply_markup=keyboard)
-    except Exception as e:
-        logger.error(f"Помилка обробки реєстрації: {e}")
-
-@dp.message()
-async def handle_group_selection(message: types.Message):
-    try:
-        user_id = message.from_user.id
-        db = await connect_db()
-        group = await db.fetchrow("SELECT * FROM groups WHERE name=$1", message.text)
-        if not group:
-            await message.answer("Такої групи не знайдено. Оберіть зі списку.")
-            return
-
-        await db.execute("UPDATE students SET group_id=$1 WHERE user_id=$2", group["id"], user_id)
-        student = await db.fetchrow("SELECT name FROM students WHERE user_id=$1", user_id)
-        await message.answer(f"Вітаю вас, {student['name']}! Тепер ви маєте доступ до меню.", reply_markup=main_menu)
-    except Exception as e:
-        logger.error(f"Помилка вибору групи: {e}")
-
-@dp.message(lambda message: message.text == "Мій розклад")
-async def show_schedule(message: types.Message):
-    db = await connect_db()
-    student = await db.fetchrow("SELECT group_id FROM students WHERE user_id=$1", message.from_user.id)
-    schedule = await db.fetch("SELECT subject, time FROM schedule WHERE group_id=$1", student["group_id"])
-    schedule_text = "\n".join([f"{row['time']} - {row['subject']}" for row in schedule])
-    await message.answer(f"Ваш розклад:\n{schedule_text}")
+        await message.answer("📌 Оберіть свою групу:", reply_markup=keyboard)
+    elif message.text == "📅 Мій розклад":
+        schedule = await db.fetch("SELECT subject, time FROM schedule WHERE group_id=$1", student["group_id"])
+        if schedule:
+            schedule_text = "\n".join([f"⏰ {row['time']} - {row['subject']}" for row in schedule])
+            await message.answer(f"📖 Ваш розклад:\n{schedule_text}")
+        else:
+            await message.answer("❌ Розклад не знайдено.")
+    elif message.text == "📚 Контакти викладачів":
+        contacts = await db.fetch("SELECT name, phone FROM teachers")
+        contacts_text = "\n".join([f"👨‍🏫 {row['name']}: {row['phone']}" for row in contacts])
+        await message.answer(f"📞 Контакти викладачів:\n{contacts_text}")
+    elif message.text == "👥 Учні у групі":
+        students = await db.fetch("SELECT name FROM students WHERE group_id=$1", student["group_id"])
+        students_text = "\n".join([f"👤 {row['name']}" for row in students])
+        await message.answer(f"👨‍🎓 Учні вашої групи:\n{students_text}")
+    else:
+        await message.answer("❓ Невідома команда. Виберіть дію з меню.")
 
 async def main():
     await delete_webhook()
@@ -137,7 +126,7 @@ def run_flask():
 
 @app.route("/")
 def index():
-    return "Бот працює!"
+    return "🚀 Бот працює!"
 
 if __name__ == "__main__":
     flask_thread = Thread(target=run_flask)
