@@ -96,33 +96,24 @@ async def start_registration(message: types.Message):
         # Якщо користувач не зареєстрований
         await message.answer("Введіть своє ім'я та прізвище для реєстрації:")
 
-@dp.message()
-async def handle_group_selection(message: types.Message):
-    """ Вибір групи """
-    user_id = message.from_user.id
-    db = await connect_db()
+        # Очікуємо ім'я користувача
+        @dp.message()
+        async def register_user(message: types.Message):
+            user_name = message.text
+            db = await connect_db()
 
-    # Перевірка, чи користувач вже зареєстрований і вибрав групу
-    user = await db.fetchrow("SELECT * FROM students WHERE user_id=$1", user_id)
-    if user and user["group_id"]:
-        # Якщо група вже вибрана, даємо доступ до основних функцій
-        await message.answer("Вітаю! Ось ваші доступні опції:", reply_markup=main_keyboard)
-        return
-    
-    # Якщо група ще не вибрана, отримуємо список груп
-    group_name = message.text
-    group = await db.fetchrow("SELECT id FROM groups WHERE name=$1", group_name)
-    
-    if not group:
-        await message.answer("Такої групи немає. Виберіть правильну групу.")
-        return
+            # Додаємо нового користувача в базу
+            await db.execute("INSERT INTO students (user_id, name) VALUES ($1, $2)", user_id, user_name)
+            await message.answer("Ваше ім'я було успішно зареєстровано! Тепер виберіть групу.")
 
-    # Оновлюємо інформацію про групу користувача
-    await db.execute("UPDATE students SET group_id=$1 WHERE user_id=$2", group["id"], user_id)
-    
-    # Після вибору групи надаємо доступ до основних функцій
-    await message.answer("Ви успішно зареєстровані! Ось ваші доступні опції:", reply_markup=main_keyboard)
-
+            # Отримуємо список груп
+            groups = await db.fetch("SELECT id, name FROM groups")
+            keyboard = ReplyKeyboardMarkup(
+                keyboard=[[KeyboardButton(text=group["name"])] for group in groups],
+                resize_keyboard=True,
+                one_time_keyboard=True
+            )
+            await message.answer("Оберіть свою групу:", reply_markup=keyboard)
 
 @dp.message()
 async def handle_group_selection(message: types.Message):
@@ -219,13 +210,4 @@ def keep_alive():
 
 def flask_thread():
     """ Запуск Flask у потоці """
-    app.run(host="0.0.0.0", port=PORT)
-
-async def main():
-    await delete_webhook()
-    Thread(target=flask_thread).start()
-    logger.info("Бот запускається...")
-    await dp.start_polling(bot)
-
-if __name__ == "__main__":
-    asyncio.run(main())
+    app.run(host="0.0.0.0", port=PORT
