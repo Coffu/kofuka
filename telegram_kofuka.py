@@ -3,11 +3,11 @@ import logging
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
-from aiogram.fsm.storage.memory import MemoryStorage
 import asyncpg
 import asyncio
 from flask import Flask
 from threading import Thread
+from aiogram.router import Router
 
 # Налаштування логування
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -18,10 +18,10 @@ TOKEN = os.getenv("BOT_TOKEN")  # Токен бота
 DATABASE_URL = os.getenv("DATABASE_URL")  # URL бази даних
 PORT = int(os.getenv("PORT", 5000))
 
-# Створення об'єктів бота та диспетчера
+# Створення об'єктів бота, диспетчера та маршрутизатора
 bot = Bot(token=TOKEN)
-storage = MemoryStorage()
-dp = Dispatcher(storage=storage)
+dp = Dispatcher(bot)
+router = Router()
 
 app = Flask(__name__)
 
@@ -49,13 +49,13 @@ start_keyboard = ReplyKeyboardMarkup(
     resize_keyboard=True
 )
 
-@dp.message(Command("start"))
+@router.message(Command("start"))
 async def start_command(message: types.Message):
     """ Вітання користувача """
     logger.info(f"Користувач {message.from_user.id} виконав команду /start")
     await message.answer("Вітаю! Хочете почати? Натисніть кнопку 'Почати 🪄'.", reply_markup=start_keyboard)
 
-@dp.message(lambda message: message.text == "Почати 🪄")
+@router.message(lambda message: message.text == "Почати 🪄")
 async def start_registration(message: types.Message):
     """ Початок реєстрації користувача """
     user_id = message.from_user.id
@@ -70,7 +70,6 @@ async def start_registration(message: types.Message):
     else:
         # Якщо користувач не зареєстрований
         await message.answer("Введіть своє ім'я та прізвище для реєстрації:")
-        # Зберігаємо ім'я користувача
         dp.register_message_handler(save_name_for_registration)
 
 async def save_name_for_registration(message: types.Message):
@@ -111,9 +110,10 @@ def flask_thread():
 
 async def main():
     await delete_webhook()
+    dp.include_router(router)
     Thread(target=flask_thread).start()
     logger.info("Бот запускається...")
-    await dp.start_polling(bot)
+    await dp.start_polling()
 
 if __name__ == "__main__":
     asyncio.run(main())
