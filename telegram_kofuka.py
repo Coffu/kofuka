@@ -125,7 +125,7 @@ async def handle_group_selection(message: types.Message):
     user_id = message.from_user.id
     db = await connect_db()
 
-    # Перевіряємо, чи користувач уже зареєстрований
+    # Перевіряємо, чи користувач вже зареєстрований
     user = await db.fetchrow("SELECT * FROM students WHERE user_id=$1", user_id)
 
     if not user:
