@@ -5,8 +5,8 @@ import psycopg2
 from flask import Flask, request
 from sqlalchemy import create_engine, Column, Integer, String, ForeignKey
 from sqlalchemy.orm import sessionmaker, declarative_base, relationship
-from telegram import Update, ReplyKeyboardMarkup
-from telegram.ext import Updater, CommandHandler, CallbackContext, MessageHandler, Filters, Dispatcher
+from telegram import Update, ReplyKeyboardMarkup, Bot
+from telegram.ext import CommandHandler, CallbackContext, MessageHandler, Filters, Dispatcher
 
 # Налаштування логування
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -19,6 +19,13 @@ Base = declarative_base()
 engine = create_engine(DATABASE_URL)
 Session = sessionmaker(bind=engine)
 session = Session()
+
+# Перевірка підключення до БД
+try:
+    with engine.connect() as conn:
+        logger.info("Успішне підключення до бази даних!")
+except Exception as e:
+    logger.error(f"Помилка підключення до БД: {e}")
 
 class Group(Base):
     __tablename__ = 'groups'
@@ -44,6 +51,8 @@ class Teacher(Base):
 Base.metadata.create_all(engine)
 
 app = Flask(__name__)
+bot = Bot(token=TOKEN)
+dispatcher = Dispatcher(bot, None, workers=4)
 
 def start(update: Update, context: CallbackContext):
     logger.info("Команда /start від користувача %s", update.message.from_user.id)
@@ -109,13 +118,11 @@ def handle_message(update: Update, context: CallbackContext):
 
 @app.route(f"/{TOKEN}", methods=["POST"])
 def webhook():
-    logger.info("Отримано оновлення з Telegram")
+    logger.info("Отримано оновлення з Telegram: %s", request.get_json())
     update = Update.de_json(request.get_json(), bot)
     dispatcher.process_update(update)
     return "OK"
 
-bot = Updater(TOKEN, use_context=True).bot
-dispatcher = Dispatcher(bot, None, workers=4)
 dispatcher.add_handler(CommandHandler("start", start))
 dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
 
