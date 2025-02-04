@@ -8,6 +8,10 @@ from sqlalchemy.orm import sessionmaker, declarative_base, relationship
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import Updater, CommandHandler, CallbackContext, MessageHandler, Filters, Dispatcher
 
+# Налаштування логування
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
 TOKEN = os.getenv("BOT_TOKEN")
 DATABASE_URL = os.getenv("DATABASE_URL")
 
@@ -42,6 +46,7 @@ Base.metadata.create_all(engine)
 app = Flask(__name__)
 
 def start(update: Update, context: CallbackContext):
+    logger.info("Команда /start від користувача %s", update.message.from_user.id)
     tg_id = str(update.message.from_user.id)
     user = session.query(Student).filter_by(tg_id=tg_id).first()
     
@@ -53,6 +58,7 @@ def start(update: Update, context: CallbackContext):
         update.message.reply_text("Ви не зареєстровані. Виберіть вашу групу:", reply_markup=ReplyKeyboardMarkup(group_names, one_time_keyboard=True))
 
 def register(update: Update, context: CallbackContext):
+    logger.info("Реєстрація користувача %s", update.message.from_user.id)
     tg_id = str(update.message.from_user.id)
     group_name = update.message.text
     group = session.query(Group).filter_by(name=group_name).first()
@@ -72,17 +78,20 @@ def menu_keyboard():
     ], resize_keyboard=True)
 
 def schedule(update: Update, context: CallbackContext):
+    logger.info("Запит розкладу від %s", update.message.from_user.id)
     tg_id = str(update.message.from_user.id)
     user = session.query(Student).filter_by(tg_id=tg_id).first()
     if user:
         update.message.reply_text(f"Тут буде розклад для групи {user.group.name}.")
 
 def contacts(update: Update, context: CallbackContext):
+    logger.info("Запит контактів викладачів від %s", update.message.from_user.id)
     teachers = session.query(Teacher).all()
     contacts_list = "\n".join([f"{t.name} ({t.subject}): {t.contact}" for t in teachers])
     update.message.reply_text(f"Контакти викладачів:\n{contacts_list}")
 
 def students(update: Update, context: CallbackContext):
+    logger.info("Запит студентів групи від %s", update.message.from_user.id)
     tg_id = str(update.message.from_user.id)
     user = session.query(Student).filter_by(tg_id=tg_id).first()
     if user:
@@ -91,6 +100,7 @@ def students(update: Update, context: CallbackContext):
         update.message.reply_text(f"Ваші одногрупники:\n{student_names}")
 
 def handle_message(update: Update, context: CallbackContext):
+    logger.info("Отримано повідомлення: %s", update.message.text)
     commands = {"📅 Розклад": schedule, "👨‍🏫 Контакти викладачів": contacts, "👥 Студенти групи": students}
     if update.message.text in commands:
         commands[update.message.text](update, context)
@@ -99,6 +109,7 @@ def handle_message(update: Update, context: CallbackContext):
 
 @app.route(f"/{TOKEN}", methods=["POST"])
 def webhook():
+    logger.info("Отримано оновлення з Telegram")
     update = Update.de_json(request.get_json(), bot)
     dispatcher.process_update(update)
     return "OK"
@@ -109,4 +120,5 @@ dispatcher.add_handler(CommandHandler("start", start))
 dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
 
 if __name__ == "__main__":
+    logger.info("Запуск сервера Flask")
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
