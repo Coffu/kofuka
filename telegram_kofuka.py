@@ -16,6 +16,9 @@ DATABASE_URL = os.getenv("DATABASE_URL")  # URL бази даних
 WEBHOOK_PATH = f"/webhook/{TOKEN}"  # Унікальний шлях для вебхука
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # Змінна середовища для вебхука
 
+logger.info(f"WEBHOOK_URL: {WEBHOOK_URL}")
+logger.info(f"DATABASE_URL: {DATABASE_URL}")
+
 bot = Bot(token=TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 app = FastAPI()
@@ -52,12 +55,14 @@ async def on_shutdown():
 
 @app.post(WEBHOOK_PATH)
 async def webhook_handler(update: dict):
+    logger.info(f"Отримано вебхук: {update}")
     try:
         telegram_update = types.Update.model_validate(update)
         await dp.feed_update(bot, telegram_update)
         return {"status": "ok"}
     except Exception as e:
         logger.error(f"Помилка обробки оновлення: {e}")
+        return {"status": "error", "message": str(e)}
 
 @dp.message(Command("start"))
 async def start(message: types.Message):
