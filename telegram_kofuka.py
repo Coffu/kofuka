@@ -6,6 +6,7 @@ import asyncpg
 
 # Укажіть ваш токен Telegram
 API_TOKEN = "7703843605:AAHmrXmeDGC9NybirXn9IlhMbqSDAtXx1OY"
+ADMIN_PASSWORD = "123456"
 
 # Логування
 logging.basicConfig(level=logging.INFO)
@@ -33,11 +34,33 @@ db_pool = None
 menu_buttons = ReplyKeyboardMarkup(resize_keyboard=True)
 menu_buttons.add(KeyboardButton("Розклад"))
 menu_buttons.add(KeyboardButton("Новини"))
+menu_buttons.add(KeyboardButton("Адмін-панель"))
+
+admin_users = set()
 
 # Стартова команда
 @dp.message_handler(commands=['start'])
 async def start_command(message: types.Message):
     await message.answer("Вітаємо у боті помічнику коледжу!", reply_markup=menu_buttons)
+
+# Вхід в адмін-панель
+@dp.message_handler(lambda message: message.text == "Адмін-панель")
+async def admin_login(message: types.Message):
+    await message.answer("Введіть пароль для входу в адмін-панель:")
+
+@dp.message_handler(lambda msg: msg.text == ADMIN_PASSWORD)
+async def admin_access_granted(message: types.Message):
+    admin_users.add(message.from_user.id)
+    admin_keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
+    admin_keyboard.add("➕ Додати користувача", "➖ Видалити користувача")
+    admin_keyboard.add("📆 Додати розклад", "📰 Додати новину")
+    admin_keyboard.add("🚪 Вийти з адмін-панелі")
+    await message.answer("✅ Ви увійшли в адмін-панель", reply_markup=admin_keyboard)
+
+@dp.message_handler(lambda msg: msg.text == "🚪 Вийти з адмін-панелі")
+async def admin_logout(message: types.Message):
+    admin_users.discard(message.from_user.id)
+    await message.answer("❌ Ви вийшли з адмін-панелі.", reply_markup=menu_buttons)
 
 # Розклад
 @dp.message_handler(lambda message: message.text == "Розклад")
@@ -85,13 +108,9 @@ async def get_announcements(message: types.Message):
 # Додавання новин (для адміністраторів)
 @dp.message_handler(commands=['add_news'])
 async def add_announcement(message: types.Message):
-    user_id = message.from_user.id
-    async with db_pool.acquire() as conn:
-        user = await conn.fetchrow("SELECT role FROM users WHERE telegram_id = $1", user_id)
-        if not user or user['role'] != 'admin':
-            await message.answer("Ця команда доступна лише для адміністраторів.")
-            return
-
+    if message.from_user.id not in admin_users:
+        await message.answer("Ця команда доступна лише для адміністраторів.")
+        return
     await message.answer("Введіть новину у форматі: Заголовок | Текст новини")
 
     @dp.message_handler()
