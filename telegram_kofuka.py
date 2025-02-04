@@ -1,106 +1,76 @@
 import os
-import logging
 from aiogram import Bot, Dispatcher, types
-from aiogram.filters import Command
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
-from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.fsm import FSMContext, State, StatesGroup
+from aiogram.utils import executor
+from aiogram.types import ParseMode
+from flask import Flask
 from dotenv import load_dotenv
-import asyncpg
 import asyncio
 
-# Завантажуємо змінні середовища
+# Завантажуємо змінні середовища з .env файлу
 load_dotenv()
 
-# Налаштування логування
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
-
-# Токен бота та URL бази даних
-TOKEN = os.getenv("BOT_TOKEN")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-# Створення об'єктів бота та диспетчера
-bot = Bot(token=TOKEN)
-storage = MemoryStorage()
-dp = Dispatcher(storage=storage)
+# Ініціалізація ботів
+bot = Bot(token=BOT_TOKEN)
+dp = Dispatcher(bot)
 
-# Пул підключень до БД
-db_pool = None
+# Стани для FSM (наприклад, для реєстрації)
+class Registration(StatesGroup):
+    waiting_for_name = State()  # Чекаємо ім'я
 
-async def connect_db():
-    global db_pool
-    if db_pool is None:
-        logger.info("Підключення до бази даних...")
-        db_pool = await asyncpg.create_pool(DATABASE_URL)
-    return db_pool
+# Flask додаток
+app = Flask(__name__)
 
-# Клавіатури
-start_keyboard = ReplyKeyboardMarkup(
-    keyboard=[
-        [KeyboardButton(text="Почати 🪄")]
-    ],
-    resize_keyboard=True
-)
+@app.route("/upgrade", methods=["GET"])
+def upgrade():
+    """Метод для прив'язки порту через Flask."""
+    return "Flask сервер працює, бот готовий!"
 
-# Стартова команда
-@dp.message(Command("start"))
-async def start_command(message: types.Message):
-    """ Вітання користувача і пропозиція почати реєстрацію """
-    logger.info(f"Користувач {message.from_user.id} виконав команду /start")
-    await message.answer(
-        "Вітаю! Хочете почати? Натисніть кнопку 'Почати 🪄'.", reply_markup=start_keyboard)
+# Обробник стартової команди
+@dp.message(commands=["start"])
+async def start(message: types.Message):
+    # Привітання і пропозиція почати реєстрацію
+    await message.answer("Привіт! Якщо ти новий користувач, натисни 'Почати', щоб зареєструватися.", reply_markup=types.ReplyKeyboardMarkup(
+        keyboard=[
+            [types.KeyboardButton(text="Почати")]
+        ], resize_keyboard=True))
 
-# Обробка натискання на кнопку "Почати 🪄"
-@dp.message(lambda message: message.text == "Почати 🪄")
-async def start_registration(message: types.Message):
-    """ Перевірка, чи є користувач в базі даних, і реєстрація, якщо його немає """
-    user_id = message.from_user.id
-    db = await connect_db()
-
-    # Перевіряємо, чи користувач вже зареєстрований
-    user = await db.fetchrow("SELECT * FROM students WHERE user_id=$1", user_id)
-
-    if user:
-        # Якщо користувач вже є, він переходить до основного меню
-        await message.answer("Вітаю! Ось ваші доступні опції:")
-        # Можна тут додати кнопки основного меню
+# Обробник кнопки "Почати"
+@dp.message(lambda message: message.text.lower() == "почати")
+async def process_start(message: types.Message):
+    # Перевірка, чи є користувач у базі даних
+    # Якщо користувач є в базі, то пропускаємо реєстрацію
+    user_in_db = False  # Замість цього перевірте вашу базу
+    if user_in_db:
+        await message.answer("Ти вже зареєстрований!")
     else:
-        # Якщо користувач не знайдений, починається реєстрація
-        await message.answer("Введіть своє ім'я для реєстрації:")
-        
-        # Створюємо стан для збору імені
-        await dp.message_handler(lambda message: True)(save_name_for_registration)
+        await message.answer("Для початку реєстрації введіть ваше ім'я:")
+        await Registration.waiting_for_name.set()
 
-# Окремий хендлер для збереження імені користувача
-async def save_name_for_registration(message: types.Message):
-    """ Збереження імені користувача в базі даних """
-    user_id = message.from_user.id
+# Обробник введення імені
+@dp.message(StateFilter(Registration.waiting_for_name))
+async def save_name_for_registration(message: types.Message, state: FSMContext):
+    # Збереження імені в базу даних (тут додайте ваш код)
     user_name = message.text
-    db = await connect_db()
-
-    # Додаємо користувача в базу даних
-    await db.execute("INSERT INTO students (user_id, name) VALUES ($1, $2)", user_id, user_name)
+    await state.update_data(name=user_name)
+    await message.answer(f"Ваше ім'я {user_name} збережено. Реєстрація завершена!")
     
-    # Запитуємо групу
-    await message.answer(f"Ваше ім'я {user_name} було успішно зареєстровано! Тепер виберіть свою групу.")
-    
-    # Потрібно додати логіку для вибору групи, але це можна зробити потім
-    # Наприклад, можна створити список груп, як у попередніх версіях
-    # Для цього використаємо клавіатуру з кнопками
+    # Після реєстрації завершення
+    await state.finish()
 
-    # Ваша логіка для вибору групи (вже пізніше додаємо)
-    # groups = await db.fetch("SELECT id, name FROM groups")
-    # keyboard = ReplyKeyboardMarkup(
-    #     keyboard=[[KeyboardButton(text=group["name"])] for group in groups],
-    #     resize_keyboard=True,
-    #     one_time_keyboard=True
-    # )
-    # await message.answer("Оберіть свою групу:", reply_markup=keyboard)
+# Функція для запуску Flask сервера в окремому потоці
+def run_flask():
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
 
-# Запуск бота
-async def main():
-    logger.info("Бот запускається...")
-    await dp.start_polling(bot)
+# Асинхронна функція для запуску бота
+async def start_bot():
+    await executor.start_polling(dp, skip_updates=True)
 
+# Запуск Flask та бота паралельно
 if __name__ == "__main__":
-    asyncio.run(main())
+    loop = asyncio.get_event_loop()
+    loop.create_task(start_bot())  # Запуск бота
+    run_flask()  # Запуск Flask сервера
