@@ -4,8 +4,8 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from aiogram.fsm.storage.memory import MemoryStorage
-from fastapi import FastAPI, Request
 import asyncpg
+import asyncio
 
 # Налаштування логування
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -13,15 +13,11 @@ logger = logging.getLogger(__name__)
 
 TOKEN = os.getenv("BOT_TOKEN")  # Змінна середовища для токена
 DATABASE_URL = os.getenv("DATABASE_URL")  # URL бази даних
-WEBHOOK_PATH = f"/webhook/{TOKEN}"  # Унікальний шлях для вебхука
-WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # Змінна середовища для вебхука
 
-logger.info(f"WEBHOOK_URL: {WEBHOOK_URL}")
 logger.info(f"DATABASE_URL: {DATABASE_URL}")
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
-app = FastAPI()
 
 db_pool = None  # Глобальне підключення до БД
 
@@ -31,38 +27,6 @@ async def connect_db():
         logger.info("Підключення до бази даних...")
         db_pool = await asyncpg.create_pool(DATABASE_URL)
     return db_pool
-
-@app.on_event("startup")
-async def on_startup():
-    logger.info("Запуск бота та встановлення вебхука...")
-    try:
-        await bot.set_webhook(WEBHOOK_URL)
-        logger.info(f"Webhook встановлено: {WEBHOOK_URL}")
-        global db_pool
-        db_pool = await asyncpg.create_pool(DATABASE_URL)
-    except Exception as e:
-        logger.error(f"Помилка під час запуску: {e}")
-
-@app.on_event("shutdown")
-async def on_shutdown():
-    logger.info("Зупинка бота та закриття підключення до бази даних...")
-    try:
-        await bot.session.close()
-        if db_pool is not None:
-            await db_pool.close()
-    except Exception as e:
-        logger.error(f"Помилка під час завершення роботи: {e}")
-
-@app.post(WEBHOOK_PATH)
-async def webhook_handler(update: dict):
-    logger.info(f"Отримано вебхук: {update}")
-    try:
-        telegram_update = types.Update.model_validate(update)
-        await dp.feed_update(bot, telegram_update)
-        return {"status": "ok"}
-    except Exception as e:
-        logger.error(f"Помилка обробки оновлення: {e}")
-        return {"status": "error", "message": str(e)}
 
 @dp.message(Command("start"))
 async def start(message: types.Message):
@@ -167,7 +131,10 @@ async def show_students_in_group(message: types.Message):
     except Exception as e:
         logger.error(f"Помилка виведення списку учнів: {e}")
 
+async def main():
+    logger.info("Запуск бота в режимі polling...")
+    await connect_db()
+    await dp.start_polling(bot)
+
 if __name__ == "__main__":
-    import uvicorn
-    logger.info("Запуск сервера...")
-    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
+    asyncio.run(main())
