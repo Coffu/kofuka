@@ -78,17 +78,17 @@ async def handle_message(message: types.Message):
         if group:
             await db.execute("INSERT INTO students (user_id, name, group_id) VALUES ($1, $2, $3)", user_id, admin_sessions[user_id], group["id"])
             del admin_sessions[user_id]
-            await message.answer("Реєстрація завершена! Тепер ви можете отримувати розклад і новини коледжа!.")
+            await message.answer("Реєстрація завершена! Тепер ви можете отримувати розклад і новини коледжа!😎.")
         else:
-            await message.answer("Такої групи не існує. Спробуйте ще раз.")
+            await message.answer("Такої групи не існує. Спробуйте ще раз.🥲")
     elif user_id in admin_sessions:
         if message.text == ADMIN_PASSWORD:
-            await message.answer("Ви увійшли в адмін-панель! Доступні команди: /add_group, /del_group, /add_teacher, /del_teacher, /add_schedule, /del_schedule, /add_news")
+            await message.answer("Ви увійшли в адмін-панель!👀 Доступні команди: /add_group, /del_group, /add_teacher, /del_teacher, /add_schedule, /del_schedule, /add_news")
         else:
-            await message.answer("Невірний пароль!")
+            await message.answer("Невірний пароль!🥲")
             admin_sessions.remove(user_id)
     else:
-        await message.answer("Привіт! Бот працює через вебхук!")
+        await message.answer("Привіт! я твій бот-помічник по коледжу!😘")
 
 if __name__ == "__main__":
     import uvicorn
