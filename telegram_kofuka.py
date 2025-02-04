@@ -1,8 +1,9 @@
 import os
 from aiogram import Bot, Dispatcher, types
-from aiogram.fsm import FSMContext, State, StatesGroup
+from aiogram.fsm import FSMContext
+from aiogram.fsm.state import State
+from aiogram.fsm.states import StatesGroup
 from aiogram.utils import executor
-from aiogram.types import ParseMode
 from flask import Flask
 from dotenv import load_dotenv
 import asyncio
