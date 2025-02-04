@@ -9,6 +9,10 @@ import asyncio
 from flask import Flask
 from threading import Thread
 
+dp.message.register(my_schedule, lambda message: message.text == "Мій розклад 📅")
+dp.message.register(teacher_contacts, lambda message: message.text == "Контакти викладачів 👨‍🏫")
+dp.message.register(students_in_group, lambda message: message.text == "Учні у групі 👥")
+
 # Налаштування логування
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -114,6 +118,57 @@ async def handle_group_selection(message: types.Message):
     """ Обробка вибору групи """
     user_id = message.from_user.id
     db = await connect_db()
+@dp.message(lambda message: message.text == "Мій розклад 📅")
+async def my_schedule(message: types.Message):
+    """Виведення розкладу групи користувача"""
+    user_id = message.from_user.id
+    db = await connect_db()
+
+    student = await db.fetchrow("SELECT group_id FROM students WHERE user_id=$1", user_id)
+    if not student:
+        await message.answer("Вас не знайдено у базі.")
+        return
+
+    schedule = await db.fetch("SELECT day, subject, time FROM schedule WHERE group_id=$1", student["group_id"])
+    if schedule:
+        schedule_text = "\n".join([f"{row['day']} - {row['subject']} о {row['time']}" for row in schedule])
+        await message.answer(f"Ваш розклад:\n{schedule_text}")
+    else:
+        await message.answer("Розклад відсутній.")
+
+@dp.message(lambda message: message.text == "Контакти викладачів 👨‍🏫")
+async def teacher_contacts(message: types.Message):
+    """Виведення контактів викладачів"""
+    db = await connect_db()
+    teachers = await db.fetch("SELECT name, phone FROM teachers")
+    if teachers:
+        contacts_text = "\n".join([f"{row['name']}: {row['phone']}" for row in teachers])
+        await message.answer(f"Контакти викладачів:\n{contacts_text}")
+    else:
+        await message.answer("Контакти викладачів недоступні.")
+
+@dp.message(lambda message: message.text == "Учні у групі 👥")
+async def students_in_group(message: types.Message):
+    """Виведення списку студентів у групі"""
+    user_id = message.from_user.id
+    db = await connect_db()
+
+    student = await db.fetchrow("SELECT group_id FROM students WHERE user_id=$1", user_id)
+    if not student:
+        await message.answer("Вас не знайдено у базі.")
+        return
+
+    students = await db.fetch("SELECT name FROM students WHERE group_id=$1", student["group_id"])
+    if students:
+        students_text = "\n".join([row["name"] for row in students])
+        await message.answer(f"Учні у вашій групі:\n{students_text}")
+    else:
+        await message.answer("Немає студентів у вашій групі.")
+        
+@dp.message() #тест кнопок
+async def debug_message(message: types.Message):
+    """Тестовий обробник для перевірки вхідних повідомлень"""
+    await message.answer(f"Ви натиснули: {message.text}")
 
     group = await db.fetchrow("SELECT id FROM groups WHERE name=$1", message.text)
     if not group:
