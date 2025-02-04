@@ -42,10 +42,10 @@ async def delete_webhook():
     except Exception as e:
         logger.error(f"Помилка видалення вебхука: {e}")
 
-# Створення кнопки "Почати 🪄"
+# Створення головного меню
 main_menu = ReplyKeyboardMarkup(
     keyboard=[
-        [KeyboardButton("Почати 🪄")]
+        [KeyboardButton(text="Почати 🪄")]
     ],
     resize_keyboard=True
 )
@@ -68,9 +68,9 @@ async def start_registration(message: types.Message):
             logger.info(f"Користувач {message.from_user.id} вже зареєстрований")
             keyboard = ReplyKeyboardMarkup(
                 keyboard=[
-                    [KeyboardButton("Мій розклад")],
-                    [KeyboardButton("Контакти викладачів")],
-                    [KeyboardButton("Учні у групі")]
+                    [KeyboardButton(text="Мій розклад")],
+                    [KeyboardButton(text="Контакти викладачів")],
+                    [KeyboardButton(text="Учні у групі")]
                 ],
                 resize_keyboard=True
             )
@@ -110,7 +110,7 @@ async def handle_message(message: types.Message):
             return
 
         keyboard = ReplyKeyboardMarkup(
-            keyboard=[[KeyboardButton(group["name"])] for group in groups],
+            keyboard=[[KeyboardButton(text=group["name"])] for group in groups],
             resize_keyboard=True,
             one_time_keyboard=True
         )
