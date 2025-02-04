@@ -16,15 +16,12 @@ TOKEN = os.getenv("BOT_TOKEN")  # Змінна середовища для то�
 DATABASE_URL = os.getenv("DATABASE_URL")  # URL бази даних
 PORT = int(os.getenv("PORT", 5000))
 
-bot = Bot(token=TOKEN)
-dp = Dispatcher(storage=MemoryStorage())
-
-# Flask додаток
 app = Flask(__name__)
 
-@app.route('/')
-def index():
-    return "Бот працює!"
+logger.info(f"DATABASE_URL: {DATABASE_URL}")
+
+bot = Bot(token=TOKEN)
+dp = Dispatcher(storage=MemoryStorage())
 
 db_pool = None  # Глобальне підключення до БД
 
@@ -152,8 +149,13 @@ async def main():
     await delete_webhook()  # Видалити активний вебхук
     logger.info("Запуск бота в режимі polling...")
     await connect_db()
-    asyncio.create_task(dp.start_polling(bot))
-    app.run(host="0.0.0.0", port=PORT)  # Запуск Flask
+    await dp.start_polling(bot)
+
+@app.route("/")
+def index():
+    return "Бот працює!"
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    loop = asyncio.get_event_loop()
+    loop.create_task(main())
+    app.run(host="0.0.0.0", port=PORT)
