@@ -22,7 +22,7 @@ DB_CONFIG = {
     'password': 'qKgOhgMjLsfAB1UtWtqHFSNcI7TM1PDT',
     'database': 'pr_tg',
     'host': 'dpg-cugmd1bv2p9s73cktkog-a',
-    'port': 5432
+    'port': '5432'
 }
 
 async def create_db_pool():
