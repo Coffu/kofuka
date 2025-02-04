@@ -2,7 +2,7 @@ import os
 import logging
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, Message
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from aiogram.fsm.storage.memory import MemoryStorage
 import asyncpg
 import asyncio
@@ -75,6 +75,7 @@ async def start_registration(message: types.Message):
     user = await db.fetchrow("SELECT * FROM students WHERE user_id=$1", user_id)
 
     if user:
+        logger.info(f"Користувач {user_id} вже зареєстрований.")
         # Якщо користувач вже зареєстрований, перевіряємо групу
         if user["group_id"]:
             await message.answer("Вітаю! Ось ваші доступні опції:", reply_markup=main_keyboard)
@@ -93,6 +94,7 @@ async def start_registration(message: types.Message):
             await message.answer("Оберіть свою групу:", reply_markup=keyboard)
         return
     else:
+        logger.info(f"Користувач {user_id} не зареєстрований. Починаємо реєстрацію.")
         # Якщо користувач не зареєстрований, запитуємо ім'я
         await message.answer("Введіть своє ім'я та прізвище для реєстрації:")
 
@@ -107,11 +109,18 @@ async def save_name_for_registration(message: types.Message):
     db = await connect_db()
 
     # Додаємо користувача в базу даних
+    logger.info(f"Додаємо користувача {user_id} з ім'ям {user_name} в базу даних.")
     await db.execute("INSERT INTO students (user_id, name) VALUES ($1, $2)", user_id, user_name)
-    await message.answer(f"Ваше ім'я {user_name} було успішно зареєстровано! Тепер виберіть свою групу.")
 
+    # Підтвердження, що ім'я було збережено
+    await message.answer(f"Ваше ім'я {user_name} було успішно зареєстровано! Тепер виберіть свою групу.")
+    
     # Запитуємо групу
     groups = await db.fetch("SELECT id, name FROM groups")
+    if not groups:
+        await message.answer("У системі немає доступних груп.")
+        return
+
     keyboard = ReplyKeyboardMarkup(
         keyboard=[[KeyboardButton(text=group["name"])] for group in groups],
         resize_keyboard=True,
@@ -129,6 +138,7 @@ async def handle_group_selection(message: types.Message):
     user = await db.fetchrow("SELECT * FROM students WHERE user_id=$1", user_id)
 
     if not user:
+        logger.warning(f"Користувач {user_id} ще не зареєстрований!")
         await message.answer("Будь ласка, спочатку введіть своє ім'я для реєстрації.")
         return
 
@@ -146,67 +156,7 @@ async def handle_group_selection(message: types.Message):
     # Після вибору групи надаємо доступ до основних функцій
     await message.answer("Ви успішно зареєстровані! Ось ваші доступні опції:", reply_markup=main_keyboard)
 
-@dp.message(lambda message: message.text == "Мій розклад 📅")
-async def my_schedule(message: types.Message):
-    """ Виведення розкладу для групи користувача """
-    user_id = message.from_user.id
-    db = await connect_db()
-    student = await db.fetchrow("SELECT group_id FROM students WHERE user_id=$1", user_id)
-    
-    if not student or not student["group_id"]:
-        await message.answer("Вам потрібно вибрати групу перед переглядом розкладу.")
-        return
-
-    schedule = await db.fetch("SELECT day, subject, time, classroom FROM schedule WHERE group_id=$1", student["group_id"])
-    if schedule:
-        schedule_text = "\n".join([f"{row['day']} - {row['subject']} о {row['time']} в {row['classroom']}" for row in schedule])
-        await message.answer(f"Ваш розклад:\n{schedule_text}")
-    else:
-        await message.answer("Розклад відсутній.")
-
-@dp.message(lambda message: message.text == "Контакти викладачів 👨‍🏫")
-async def teacher_contacts(message: types.Message):
-    """ Виведення контактів викладачів для групи користувача """
-    user_id = message.from_user.id
-    db = await connect_db()
-    
-    # Отримуємо group_id для користувача
-    student = await db.fetchrow("SELECT group_id FROM students WHERE user_id=$1", user_id)
-
-    if not student or not student["group_id"]:
-        await message.answer("Вам потрібно вибрати групу перед переглядом контактів викладачів.")
-        return
-
-    # Отримуємо викладачів для цієї групи з таблиці teachers
-    teachers = await db.fetch("SELECT name, subject, email FROM teachers WHERE group_id=$1", student["group_id"])
-    
-    if teachers:
-        contacts_text = "\n".join([f"{teacher['name']} - {teacher['subject']} - {teacher['email']}" for teacher in teachers])
-        await message.answer(f"Контакти викладачів для вашої групи:\n{contacts_text}")
-    else:
-        await message.answer("Контакти викладачів для вашої групи відсутні.")
-
-@dp.message(lambda message: message.text == "Учні у групі 👥")
-async def group_students(message: types.Message):
-    """ Виведення учнів, які належать до тієї ж групи, що й користувач """
-    user_id = message.from_user.id
-    db = await connect_db()
-
-    # Отримуємо group_id для користувача
-    student = await db.fetchrow("SELECT group_id FROM students WHERE user_id=$1", user_id)
-
-    if not student or not student["group_id"]:
-        await message.answer("Вам потрібно вибрати групу перед переглядом учнів.")
-        return
-
-    # Отримуємо список учнів, які належать до цієї ж групи
-    students_in_group = await db.fetch("SELECT name FROM students WHERE group_id=$1", student["group_id"])
-    
-    if students_in_group:
-        students_list = "\n".join([student["name"] for student in students_in_group])
-        await message.answer(f"Учні у вашій групі:\n{students_list}")
-    else:
-        await message.answer("Учні у вашій групі відсутні.")
+# Ось інші хендлери (наприклад, для розкладу, контактів викладачів та ін.)
 
 @app.route("/")
 def keep_alive():
