@@ -19,53 +19,53 @@ PORT = int(os.getenv("PORT", 5000))
 
 app = Flask(__name__)
 
-logger.info(f"DATABASE_URL: {DATABASE_URL}")
+logger.info(f"Підключення до бази даних за адресою: {DATABASE_URL}")
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
 db_pool = None  # Глобальне підключення до БД
 
+# Підключення до бази даних з обробкою помилок
 async def connect_db():
     global db_pool
-    if db_pool is None:
-        logger.info("\U0001F4BB Підключення до бази даних...")
-        db_pool = await asyncpg.create_pool(DATABASE_URL)
-    return db_pool
-
-async def delete_webhook():
     try:
-        webhook_info = await bot.get_webhook_info()
-        if webhook_info.url:
-            logger.info(f"\U0001F5D1 Видалення активного вебхука: {webhook_info.url}")
-            await bot.delete_webhook()
+        if db_pool is None:
+            logger.info("Підключення до бази даних...")
+            db_pool = await asyncpg.create_pool(DATABASE_URL)
+        return db_pool
     except Exception as e:
-        logger.error(f"\U000026A0 Помилка видалення вебхука: {e}")
+        logger.error(f"Помилка підключення до бази даних: {e}")
+        return None
 
 # Головне меню
 main_menu = ReplyKeyboardMarkup(
     keyboard=[
-        [KeyboardButton(text="\U0001F4C5 Мій розклад")],
-        [KeyboardButton(text="\U0001F4DA Контакти викладачів")],
-        [KeyboardButton(text="\U0001F465 Учні у групі")]
+        [KeyboardButton(text="📅 Мій розклад")],
+        [KeyboardButton(text="📚 Контакти викладачів")],
+        [KeyboardButton(text="👥 Учні у групі")]
     ],
     resize_keyboard=True
 )
 
 start_menu = ReplyKeyboardMarkup(
-    keyboard=[[KeyboardButton(text="\U0001F680 Почати")]],
+    keyboard=[[KeyboardButton(text="🚀 Почати")]],
     resize_keyboard=True
 )
 
 @dp.message(Command("start"))
 async def start_command(message: types.Message):
     logger.info(f"Користувач {message.from_user.id} розпочав роботу з ботом")
-    await message.answer("\U0001F44B Вітаю! Я ваш навчальний бот. Натисніть '🚀 Почати', щоб продовжити.", reply_markup=start_menu)
+    await message.answer("👋 Вітаю! Я ваш навчальний бот. Натисніть '🚀 Почати', щоб продовжити.", reply_markup=start_menu)
 
-@dp.message(lambda message: message.text == "\U0001F680 Почати")
+@dp.message(lambda message: message.text == "🚀 Почати")
 async def start_registration(message: types.Message):
     logger.info(f"Користувач {message.from_user.id} натиснув Почати")
     db = await connect_db()
+    if db is None:
+        await message.answer("❌ Сталася помилка з підключенням до бази даних. Спробуйте пізніше.")
+        return
+
     user_id = message.from_user.id
     student = await db.fetchrow("SELECT name FROM students WHERE user_id=$1", user_id)
     
@@ -78,6 +78,10 @@ async def start_registration(message: types.Message):
 async def handle_registration_or_menu(message: types.Message):
     logger.info(f"Користувач {message.from_user.id} ввів: {message.text}")
     db = await connect_db()
+    if db is None:
+        await message.answer("❌ Сталася помилка з підключенням до бази даних. Спробуйте пізніше.")
+        return
+
     user_id = message.from_user.id
     student = await db.fetchrow("SELECT * FROM students WHERE user_id=$1", user_id)
     
@@ -125,7 +129,9 @@ async def handle_registration_or_menu(message: types.Message):
 
 @app.route("/")
 def index():
+    logger.info("Бот працює!")
     return "Бот працює!"
 
 if __name__ == "__main__":
+    logger.info("Запуск бота...")
     app.run(host="0.0.0.0", port=PORT)
