@@ -42,10 +42,22 @@ async def delete_webhook():
     except Exception as e:
         logger.error(f"Помилка видалення вебхука: {e}")
 
+# Створення кнопки "Почати 🪄"
+main_menu = ReplyKeyboardMarkup(resize_keyboard=True)
+main_menu.add(KeyboardButton("Почати 🪄"))
+
 @dp.message(Command("start"))
-async def start(message: types.Message):
+async def start_command(message: types.Message):
     try:
         logger.info(f"Користувач {message.from_user.id} виконав команду /start")
+        await message.answer("Вітаю! Натисніть кнопку 'Почати 🪄' для продовження.", reply_markup=main_menu)
+    except Exception as e:
+        logger.error(f"Помилка в обробці команди /start: {e}")
+
+@dp.message(lambda message: message.text == "Почати 🪄")
+async def start_registration(message: types.Message):
+    try:
+        logger.info(f"Користувач {message.from_user.id} натиснув 'Почати 🪄'")
         db = await connect_db()
         user = await db.fetchrow("SELECT * FROM students WHERE user_id=$1", message.from_user.id)
         if user:
@@ -58,7 +70,7 @@ async def start(message: types.Message):
             logger.info(f"Користувач {message.from_user.id} не зареєстрований. Запит імені та прізвища.")
             await message.answer("Введіть своє ім'я та прізвище для реєстрації:")
     except Exception as e:
-        logger.error(f"Помилка в обробці команди /start: {e}")
+        logger.error(f"Помилка в обробці реєстрації: {e}")
 
 @dp.message()
 async def handle_message(message: types.Message):
