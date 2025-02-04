@@ -28,6 +28,15 @@ async def connect_db():
         db_pool = await asyncpg.create_pool(DATABASE_URL)
     return db_pool
 
+async def delete_webhook():
+    try:
+        webhook_info = await bot.get_webhook_info()
+        if webhook_info.url:
+            logger.info(f"Видалення активного вебхука: {webhook_info.url}")
+            await bot.delete_webhook()
+    except Exception as e:
+        logger.error(f"Помилка видалення вебхука: {e}")
+
 @dp.message(Command("start"))
 async def start(message: types.Message):
     try:
@@ -132,6 +141,8 @@ async def show_students_in_group(message: types.Message):
         logger.error(f"Помилка виведення списку учнів: {e}")
 
 async def main():
+    logger.info("Запуск сервера...")
+    await delete_webhook()  # Видалити активний вебхук
     logger.info("Запуск бота в режимі polling...")
     await connect_db()
     await dp.start_polling(bot)
