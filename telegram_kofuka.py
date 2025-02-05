@@ -132,10 +132,11 @@ def students(update: Update, context: CallbackContext):
     logger.info("Запит студентів групи від %s", update.message.from_user.id)
     tg_id = str(update.message.from_user.id)
     user = session.query(Student).filter_by(tg_id=tg_id).first()
+    
     if user:
         group_students = session.query(Student).filter_by(group_id=user.group_id).all()
-        student_names = "\n".join([f"👩‍🎓 {s.name}" for s in group_students])
-        update.message.reply_text(f"👥 Ваші одногрупники:\n{student_names}")
+        student_names = "\n".join([f"👩‍🎓 [{s.name}](https://t.me/{s.tg_id})" for s in group_students])
+        update.message.reply_text(f"👥 Ваші одногрупники:\n{student_names}", parse_mode='Markdown')
     else:
         update.message.reply_text("⚠️ Будь ласка, спочатку зареєструйтесь у групі 👥.")
 
