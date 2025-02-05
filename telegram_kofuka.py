@@ -108,8 +108,17 @@ def schedule(update: Update, context: CallbackContext):
     logger.info("Запит розкладу від %s", update.message.from_user.id)
     tg_id = str(update.message.from_user.id)
     user = session.query(Student).filter_by(tg_id=tg_id).first()
+
     if user:
-        update.message.reply_text(f"Тут буде розклад для групи {user.group.name}.")
+        group_schedule = session.query(Schedule).filter_by(group_id=user.group_id).all()
+        if group_schedule:
+            schedule_text = "Розклад для групи:\n"
+            for item in group_schedule:
+                schedule_text += f"{item.day_of_week} - {item.lesson_time}: {item.subject}\n"
+            update.message.reply_text(schedule_text)
+        else:
+            update.message.reply_text(f"Розклад для групи {user.group.name} ще не налаштовано.")
+
 
 def contacts(update: Update, context: CallbackContext):
     logger.info("Запит контактів викладачів від %s", update.message.from_user.id)
