@@ -28,6 +28,17 @@ try:
 except Exception as e:
     logger.error(f"Помилка підключення до БД: {e}")
 
+class Schedule(Base):
+    __tablename__ = 'schedule'
+    id = Column(Integer, primary_key=True)
+    group_id = Column(Integer, ForeignKey('groups.id'))
+    day_of_week = Column(String, nullable=False)
+    lesson_time = Column(String, nullable=False)
+    subject = Column(String, nullable=False)
+
+    group = relationship("Group", back_populates="schedule")
+
+Group.schedule = relationship("Schedule", back_populates="group")
 
 class Group(Base):
     __tablename__ = 'groups'
