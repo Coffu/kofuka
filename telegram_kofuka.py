@@ -29,22 +29,20 @@ except Exception as e:
     logger.error(f"Помилка підключення до БД: {e}")
 
 class Schedule(Base):
-    __tablename__ = 'schedule'
+    __tablename__ = 'schedules'
     id = Column(Integer, primary_key=True)
     group_id = Column(Integer, ForeignKey('groups.id'))
-    day_of_week = Column(String, nullable=False)
-    lesson_time = Column(String, nullable=False)
-    subject = Column(String, nullable=False)
-
-    group = relationship("Group", back_populates="schedule")
-
-Group.schedule = relationship("Schedule", back_populates="group")
+    day = Column(String, nullable=False)
+    time = Column(String, nullable=False)
+    
+    group = relationship("Group", back_populates="schedules")  # Встановлюємо відношення
 
 class Group(Base):
     __tablename__ = 'groups'
     id = Column(Integer, primary_key=True)
     name = Column(String, unique=True, nullable=False)
     students = relationship("Student", back_populates="group")
+    schedules = relationship("Schedule", back_populates="group")  # Відношення до Schedule
 
 class Student(Base):
     __tablename__ = 'students'
@@ -77,11 +75,11 @@ def start(update: Update, context: CallbackContext):
     user = session.query(Student).filter_by(tg_id=tg_id).first()
 
     if user:
-        update.message.reply_text(f"Вітаю, {user.name}! Ви в групі {user.group.name}.", reply_markup=menu_keyboard())
+        update.message.reply_text(f"👋 Вітаю, {user.name}! Ви в групі {user.group.name}.", reply_markup=menu_keyboard())
     else:
         groups = session.query(Group).all()
         group_names = [[g.name] for g in groups]
-        update.message.reply_text("Ви не зареєстровані. Виберіть вашу групу:", reply_markup=ReplyKeyboardMarkup(group_names, one_time_keyboard=True))
+        update.message.reply_text("❗ Ви не зареєстровані. Виберіть вашу групу:", reply_markup=ReplyKeyboardMarkup(group_names, one_time_keyboard=True))
 
 def register(update: Update, context: CallbackContext):
     logger.info("Реєстрація користувача %s", update.message.from_user.id)
@@ -93,13 +91,13 @@ def register(update: Update, context: CallbackContext):
         student = Student(tg_id=tg_id, name=update.message.from_user.full_name, group=group)
         session.add(student)
         session.commit()
-        update.message.reply_text(f"Ви зареєстровані в групі {group.name}", reply_markup=menu_keyboard())
+        update.message.reply_text(f"✅ Ви зареєстровані в групі {group.name}", reply_markup=menu_keyboard())
     else:
-        update.message.reply_text("Такої групи не знайдено. Виберіть зі списку.")
+        update.message.reply_text("❌ Такої групи не знайдено. Виберіть зі списку 👇.")
 
 def menu_keyboard():
-    return ReplyKeyboardMarkup([[
-        "📅 Розклад", "👨‍🏫 Контакти викладачів"
+    return ReplyKeyboardMarkup([[ 
+        "📅 Розклад", "👨‍🏫 Контакти викладачів" 
     ], [
         "👥 Студенти групи"
     ]], resize_keyboard=True)
@@ -108,23 +106,24 @@ def schedule(update: Update, context: CallbackContext):
     logger.info("Запит розкладу від %s", update.message.from_user.id)
     tg_id = str(update.message.from_user.id)
     user = session.query(Student).filter_by(tg_id=tg_id).first()
-
     if user:
         group_schedule = session.query(Schedule).filter_by(group_id=user.group_id).all()
         if group_schedule:
-            schedule_text = "Розклад для групи:\n"
-            for item in group_schedule:
-                schedule_text += f"{item.day_of_week} - {item.lesson_time}: {item.subject}\n"
-            update.message.reply_text(schedule_text)
+            schedule_text = "\n".join([f"🗓️ {s.day} - {s.time}" for s in group_schedule])
+            update.message.reply_text(f"📅 Розклад для групи {user.group.name}:\n{schedule_text}")
         else:
-            update.message.reply_text(f"Розклад для групи {user.group.name} ще не налаштовано.")
-
+            update.message.reply_text("⏳ Розклад ще не доступний.")
+    else:
+        update.message.reply_text("⚠️ Будь ласка, спочатку зареєструйтесь у групі 👥.")
 
 def contacts(update: Update, context: CallbackContext):
     logger.info("Запит контактів викладачів від %s", update.message.from_user.id)
     teachers = session.query(Teacher).all()
-    contacts_list = "\n".join([f"{t.name} ({t.subject}): {t.contact}" for t in teachers])
-    update.message.reply_text(f"Контакти викладачів:\n{contacts_list}")
+    if teachers:
+        contacts_list = "\n".join([f"👨‍🏫 {t.name} ({t.subject}): {t.contact}" for t in teachers])
+        update.message.reply_text(f"📚 Контакти викладачів:\n{contacts_list}")
+    else:
+        update.message.reply_text("⏳ Контакти викладачів поки що недоступні.")
 
 def students(update: Update, context: CallbackContext):
     logger.info("Запит студентів групи від %s", update.message.from_user.id)
@@ -132,8 +131,10 @@ def students(update: Update, context: CallbackContext):
     user = session.query(Student).filter_by(tg_id=tg_id).first()
     if user:
         group_students = session.query(Student).filter_by(group_id=user.group_id).all()
-        student_names = "\n".join([s.name for s in group_students])
-        update.message.reply_text(f"Ваші одногрупники:\n{student_names}")
+        student_names = "\n".join([f"👩‍🎓 {s.name}" for s in group_students])
+        update.message.reply_text(f"👥 Ваші одногрупники:\n{student_names}")
+    else:
+        update.message.reply_text("⚠️ Будь ласка, спочатку зареєструйтесь у групі 👥.")
 
 def handle_message(update: Update, context: CallbackContext):
     logger.info("Отримано повідомлення: %s", update.message.text)
@@ -142,7 +143,7 @@ def handle_message(update: Update, context: CallbackContext):
         commands[update.message.text](update, context)
     else:
         register(update, context)
-        
+
 @app.after_request
 def after_request(response):
     response.headers["Content-Type"] = "application/json; charset=utf-8"
