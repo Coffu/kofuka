@@ -35,7 +35,7 @@ class Schedule(Base):
     day = Column(String, nullable=False)
     time = Column(String, nullable=False)
     
-    group = relationship("Group", back_populates="schedules")  # Встановлюємо відношення
+    group = relationship("Group", back_populates="schedules")  # Відношення до групи
 
 class Group(Base):
     __tablename__ = 'groups'
@@ -106,15 +106,18 @@ def schedule(update: Update, context: CallbackContext):
     logger.info("Запит розкладу від %s", update.message.from_user.id)
     tg_id = str(update.message.from_user.id)
     user = session.query(Student).filter_by(tg_id=tg_id).first()
+    
     if user:
         group_schedule = session.query(Schedule).filter_by(group_id=user.group_id).all()
+        
         if group_schedule:
             schedule_text = "\n".join([f"🗓️ {s.day} - {s.time}" for s in group_schedule])
             update.message.reply_text(f"📅 Розклад для групи {user.group.name}:\n{schedule_text}")
         else:
-            update.message.reply_text("⏳ Розклад ще не доступний.")
+            update.message.reply_text("⏳ Розклад для цієї групи ще не додано.")
     else:
         update.message.reply_text("⚠️ Будь ласка, спочатку зареєструйтесь у групі 👥.")
+
 
 def contacts(update: Update, context: CallbackContext):
     logger.info("Запит контактів викладачів від %s", update.message.from_user.id)
