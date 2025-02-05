@@ -20,12 +20,14 @@ engine = create_engine(DATABASE_URL)
 Session = sessionmaker(bind=engine)
 session = Session()
 
-# Перевірка підключення до БД
+# Перевірка підключення до БД і встановлення кодування UTF-8
 try:
     with engine.connect() as conn:
+        conn.execute("SET client_encoding TO 'UTF8'")  # Встановлюємо кодування на UTF-8
         logger.info("Успішне підключення до бази даних!")
 except Exception as e:
     logger.error(f"Помилка підключення до БД: {e}")
+
 
 class Group(Base):
     __tablename__ = 'groups'
@@ -62,7 +64,7 @@ def start(update: Update, context: CallbackContext):
     logger.info("Команда /start від користувача %s", update.message.from_user.id)
     tg_id = str(update.message.from_user.id)
     user = session.query(Student).filter_by(tg_id=tg_id).first()
-    
+
     if user:
         update.message.reply_text(f"Вітаю, {user.name}! Ви в групі {user.group.name}.", reply_markup=menu_keyboard())
     else:
@@ -120,6 +122,11 @@ def handle_message(update: Update, context: CallbackContext):
         commands[update.message.text](update, context)
     else:
         register(update, context)
+        
+@app.after_request
+def after_request(response):
+    response.headers["Content-Type"] = "application/json; charset=utf-8"
+    return response
 
 @app.route(f"/{TOKEN}", methods=["POST"])
 def webhook():
